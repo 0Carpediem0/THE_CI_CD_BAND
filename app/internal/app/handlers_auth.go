@@ -158,11 +158,6 @@ func (s *Server) passwordReset(w http.ResponseWriter, r *http.Request) {
                 http.Error(w, "Введите пароль", http.StatusBadRequest)
                 return
         }
-        hash, err := hashPassword(pass)
-        if err != nil {
-                http.Error(w, "Некорректный пароль", http.StatusBadRequest)
-                return
-        }
         ctx := r.Context()
         tx, err := s.db.BeginTx(ctx, nil)
         if err != nil {
@@ -176,6 +171,11 @@ func (s *Server) passwordReset(w http.ResponseWriter, r *http.Request) {
                 RETURNING user_id`, rid, code).Scan(&uid)
         if err != nil {
                 invalid()
+                return
+        }
+        hash, err := hashPassword(pass)
+        if err != nil {
+                http.Error(w, "Некорректный пароль", http.StatusBadRequest)
                 return
         }
         if _, err := tx.ExecContext(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2`, hash, uid); err != nil {
@@ -224,7 +224,11 @@ func (s *Server) mailBox(w http.ResponseWriter, r *http.Request) {
                 http.Redirect(w, r, "/mail", http.StatusFound)
                 return
         }
-        rows, err := s.db.QueryContext(r.Context(), `SELECT recipient, subject, body, created_at::text FROM mail_outbox WHERE recipient=$1 ORDER BY id DESC LIMIT 50`, u.Email)
+        if !u.IsAdmin() {
+                s.render(w, r, "mail.html", Page{Title: "Почта", User: u})
+                return
+        }
+        rows, err := s.db.QueryContext(r.Context(), `SELECT recipient, subject, body, created_at::text FROM mail_outbox ORDER BY id DESC LIMIT 50`)
         if err != nil {
                 http.Error(w, "Не удалось загрузить письма", http.StatusInternalServerError)
                 return
