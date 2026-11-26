@@ -1,0 +1,20 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-30
+################################################################################################
+== 7. OW-30: кука без HttpOnly: сессия читается из JavaScript ==
+    · Всё предыдущее имеет смысл только потому, что в cookie нет флага HttpOnly
+    · (auth.go:59) — значит document.cookie отдаёт ow_session целиком, без
+    · дополнительных дыр. Смотрим заголовок при входе:
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    Set-Cookie: ow_session=ow.1.admin.888b25bca7475d932c148464a139cf1ac039a3678c212962c04ee3b44958b899; Path=/; SameSite=Lax
+    ┌─ АРТЕФАКТ · OW-30 · ow_session без HttpOnly
+    │ Set-Cookie: ow_session=ow.1.admin.888b25bca7475d932c148464a139cf1ac039a3678c212962c04ee3b44958b899; Path=/; SameSite=Lax
+    │ HttpOnly flag = absent; document.cookie сможет прочитать сессионный токен
+    └─
+[+] HttpOnly отсутствует: украденная кука = полная сессия жертвы
+    · Итог цепочки: жертва открывает ссылку /history?q=<ScRiPt>... (или карточку
+    · чаевых) → скрипт исполняется в её браузере → document.cookie с ow_session
+    · уходит атакующему → всё, что умеет жертва, включая её роль. Здесь мы
+    · фиксим, что фильтр пропускает payload и что кука читается из JS.

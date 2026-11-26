@@ -1,0 +1,23 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-24
+################################################################################################
+== 8. OW-24: ошибка хеширования при регистрации игнорируется ==
+    · hashPassword падает на пароле длиннее 72 байт (лимит bcrypt), ошибка
+    · вызывается молча (handlers_auth.go:80), и в базу пишется пустой хеш.
+    · Аккаунт создаётся, пароль не сохранён — войти в него нельзя никогда,
+    · и восстановить тоже нельзя: сброс тот же bcrypt. Аккаунт-зомби.
+    → POST /register  login=ow24_1795717396 password=<100 символов>
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT login||'|'||length(password_hash) FROM users WHERE login='ow24_1795717396';
+    ← psql ow24_1795717396|0
+    ← HTTP 200 на вход с исходным паролем
+    ┌─ АРТЕФАКТ · OW-24 · ошибка bcrypt проигнорирована
+    │ POST /register с password длиной 100 → HTTP 200
+    │ users.login|length(password_hash): ow24_1795717396|0
+    │ повторный POST /login → HTTP 200; пароль не позволяет войти
+    └─
+[+] в базе пустой хеш (length=0): пароль не записан, вход невозможен — регистрация с длинным паролем создаёт нерабочий аккаунт
+    → SQL DELETE FROM users WHERE login='ow24_1795717396';
+    ← psql DELETE 1
+    тестовый аккаунт ow24_1795717396 удалён из базы

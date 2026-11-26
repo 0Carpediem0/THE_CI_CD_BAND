@@ -1,0 +1,25 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-07
+################################################################################################
+== 5a. OW-07: GET отмечает заказ полученным ==
+    · /orders/{id}/received меняет статус при GET, без подтверждающего POST.
+    · Проверяем состояние в БД до и после запроса.
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment=OW-07 GET side effect
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=149
+    ← HTTP 302 redirect=http://localhost:18081/orders/205  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||' '||status FROM orders WHERE id=205;
+    ← psql 205 paid
+    → GET /orders/205/received (изменение состояния через GET)
+    ← HTTP 302 redirect=http://localhost:18081/orders/205  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||' '||status FROM orders WHERE id=205;
+    ← psql 205 received
+    ┌─ АРТЕФАКТ · OW-07 · GET изменил статус заказа
+    │ до: 205 paid
+    │ запрос: GET /orders/205/received → HTTP 200
+    │ после: 205 received
+    └─
+[+] без POST заказ перешёл paid → received

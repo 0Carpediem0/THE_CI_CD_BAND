@@ -1,0 +1,40 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-15
+################################################################################################
+== OW-15 · параллельное подтверждение одного transfer draft ==
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → POST /transfer/new amount=1 for OW-15
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=37  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    → SQL SELECT amount_kop FROM transfer_drafts WHERE id=37
+    ← psql 100
+    → SQL UPDATE transfer_drafts SET amount_kop=GREATEST(amount_kop,50000) WHERE id=37
+    ← psql UPDATE 1
+    → SQL SELECT amount_kop FROM transfer_drafts WHERE id=37
+    ← psql 50000
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-15 race'
+    ← psql 0
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-15 race'
+    ← psql 12
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 193588900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 1522300
+    ┌─ АРТЕФАКТ · OW-15 · параллельные подтверждения draft
+    │ draft #37 amount_kop=50000; confirmations=12
+    │ operations с memo OW-15 race: 0 → 12
+    │ ivanov balance: 194188900 → 193588900; petrova: 922300 → 1522300
+    │ HTTP: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
+    └─
+[+] один draft был списан/зачислен более одного раза
+    → SQL DELETE FROM operations WHERE memo='OW-15 race'
+    ← psql DELETE 12
+    → SQL DELETE FROM transfer_drafts WHERE id=37
+    ← psql DELETE 0
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1

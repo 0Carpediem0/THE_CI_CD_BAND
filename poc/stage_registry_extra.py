@@ -539,9 +539,18 @@ func TestOW25FallbackPoc(t *testing.T) {
         else:
             fail("fault-injection test failed: %s" % snippet(test25.stdout + test25.stderr, 260))
 
-    # OW-36 executes the CI script in an isolated fake-kubectl PATH and captures its own leak.
+    # OW-36: уязвимая версия CI helper (печатает секреты) живёт в истории git —
+    # на масте её уже заменили фиксом. Запускаем ОБЕ: уязвимую (из коммита до
+    # фикса) — она должна засветить секреты в stdout; текущую — она печатать
+    # не должна. Это и есть доказательство OW-36 + подтверждение закрытия.
     card("OW-36", "CI helper печатает созданные секреты в job stdout")
-    script = os.path.join(repo, "ci", "app-credentials.sh")
+    vuln_commit = "5c6b209"
+    vuln_src = subprocess.run(
+        ["git", "show", "%s:ci/app-credentials.sh" % vuln_commit],
+        cwd=repo, capture_output=True, text=True)
+    if vuln_src.returncode != 0:
+        fail("не удалось достать уязвимую версию ci/app-credentials.sh из истории: %s"
+             % vuln_src.stderr.strip())
     with tempfile.TemporaryDirectory(prefix="ow36-") as tmp:
         fakebin = os.path.join(tmp, "bin")
         os.makedirs(fakebin)
@@ -551,18 +560,31 @@ func TestOW25FallbackPoc(t *testing.T) {
         os.chmod(kubectl, 0o755)
         env = dict(os.environ, PATH=fakebin + os.pathsep + os.environ.get("PATH", ""),
                    K8S_NAMESPACE="ow-test")
-        proc = subprocess.run(["sh", script], capture_output=True, text=True, env=env)
-    secret_lines = [line for line in proc.stdout.splitlines()
+        # уязвимая версия: секреты печатаются в stdout job'а
+        vuln_script = os.path.join(tmp, "app-credentials-vuln.sh")
+        with open(vuln_script, "w", encoding="utf-8") as fp:
+            fp.write(vuln_src.stdout)
+        proc_v = subprocess.run(["sh", vuln_script], capture_output=True, text=True, env=env)
+        # текущая версия в дереве: печатать не должна (фикс с мастера)
+        proc_c = subprocess.run(
+            ["sh", os.path.join(repo, "ci", "app-credentials.sh")],
+            capture_output=True, text=True, env=env)
+    secret_lines = [line for line in proc_v.stdout.splitlines()
                     if line.startswith(("DB_PASSWORD=", "APP_SESSION_KEY=", "APP_PAYMENT_KEY="))]
-    if proc.returncode == 0 and len(secret_lines) == 3:
+    current_lines = [line for line in proc_c.stdout.splitlines()
+                     if line.startswith(("DB_PASSWORD=", "APP_SESSION_KEY=", "APP_PAYMENT_KEY="))]
+    if proc_v.returncode == 0 and len(secret_lines) == 3 and not current_lines:
         artifact("OW-36 · секреты выведены в stdout CI job",
-                 "helper запущен с изолированным fake kubectl и отсутствующим Secret; exit=%s" % proc.returncode,
-                 *[line.split("=", 1)[0] + "=<секрет напечатан>" for line in secret_lines],
-                 "секретные значения скрыты в артефакте; проверяется сам факт печати")
-        ok("CI script печатает DB_PASSWORD, APP_SESSION_KEY и APP_PAYMENT_KEY")
+                 "git show %s:ci/app-credentials.sh (версия до фикса) + fake kubectl; exit=%s"
+                 % (vuln_commit, proc_v.returncode),
+                 *["%s=<секрет напечатан в stdout>" % line.split("=", 1)[0] for line in secret_lines],
+                 "текущая версия в дереве: секретов в stdout нет (0 строк) — закрыто фиксом",
+                 "секретные значения в артефакт не выводятся; важен сам факт печати в job log")
+        ok("до фикса helper печатал 3 секрета в job stdout; текущая версия не печатает")
     else:
-        fail("CI secret leak не воспроизведён: exit=%s stdout=%s stderr=%s" %
-             (proc.returncode, snippet(proc.stdout, 200), snippet(proc.stderr, 200)))
+        fail("CI secret leak не подтверждён: vuln exit=%s lines=%d; current lines=%d; stderr=%s" %
+             (proc_v.returncode, len(secret_lines), len(current_lines),
+              snippet(proc_v.stderr, 160)))
 
     return 0
 

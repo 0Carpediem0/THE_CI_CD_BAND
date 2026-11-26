@@ -1,0 +1,31 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-06
+################################################################################################
+== OW-06 · гонка возврата/отмены между чтением статуса и записью ==
+    → SQL SELECT id FROM users WHERE login='ivanov'
+    ← psql 1
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL INSERT INTO orders(user_id,status,total_kop,lines_json,item_comment) VALUES(1,'paid',5000,'[]','OW-06 return race') RETURNING id
+    ← psql 213
+    INSERT 0 1
+    → SQL SELECT count(*) FROM operations WHERE memo='Возврат заказа #213'
+    ← psql 0
+    → SQL SELECT count(*) FROM operations WHERE memo='Возврат заказа #213'
+    ← psql 3
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194203900
+    ┌─ АРТЕФАКТ · OW-06 · конкурентный возврат
+    │ заказ #213 total_kop=5000; параллельных POST=12
+    │ refund operations: 0 → 3; balance_kop: 194188900 → 194203900
+    │ ответы HTTP: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
+    └─
+[+] несколько конкурентных возвратов прошло для одного заказа
+    → SQL DELETE FROM operations WHERE memo='Возврат заказа #213'
+    ← psql DELETE 3
+    → SQL DELETE FROM orders WHERE id=213
+    ← psql DELETE 1
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    OW-06: тестовый заказ/операции удалены, баланс восстановлен

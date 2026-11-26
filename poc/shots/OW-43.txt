@@ -1,0 +1,12 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-43
+################################################################################################
+== OW-43 · ответ пользователю раскрывает ошибку PostgreSQL ==
+    → POST /transfer/new amount_rub='1;SELECT 1/0;--'
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-43 · сообщение БД попало в HTML
+    │ POST /transfer/new → HTTP 200
+    │ ответ содержит диагностический текст: pq: division by zero | SELECT 1;SELECT 1/0;--::bigint
+    └─
+[+] клиенту возвращена подробная ошибка SQL/драйвера

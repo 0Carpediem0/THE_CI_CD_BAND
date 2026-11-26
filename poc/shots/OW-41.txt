@@ -1,0 +1,13 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-41
+################################################################################################
+== OW-41 · ответ HTML не содержит базовые security headers ==
+    → GET / для проверки заголовков
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-41 · заголовки ответа
+    │ GET / → HTTP 200
+    │ проверялись: Content-Security-Policy, X-Frame-Options, X-Content-Type-Options
+    │ отсутствуют: Content-Security-Policy, X-Frame-Options, X-Content-Type-Options
+    └─
+[+] ответ не задаёт ожидаемые security headers

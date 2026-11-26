@@ -1,0 +1,13 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-38
+################################################################################################
+== OW-38 · в обработчике уведомлений запускается shell-команда ==
+    → GET /ops/journal (результат notify redeem)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Журнал · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-38 · shell-вызов оставил артефакт в журнале
+    │ код handler вызывает sh -c 'uname -a' после ticket из redirect
+    │ GET /ops/journal → HTTP 200
+    │ вывод команды: Linux 4a1860a837ac 7.0.14-linuxkit #1 SMP PREEMPT Sun Sep 20 16:14:09 UTC 2026 aarch64 GNU/Linux
+    └─
+[+] обработчик вызвал shell и записал вывод команды в ops.log

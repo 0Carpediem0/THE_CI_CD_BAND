@@ -1,0 +1,18 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-40
+################################################################################################
+== OW-40 · POST без CSRF-токена принимается с посторонним Origin ==
+    → SQL SELECT display_name||'|'||email FROM users WHERE login='ivanov'
+    ← psql Иван Иванов|ivanov@office.local
+    → POST /profile Origin=https://attacker.invalid (без токена)
+    ← HTTP 302 redirect=http://localhost:18081/profile  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Профиль · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT display_name||'|'||email FROM users WHERE login='ivanov'
+    ← psql OW40-CSRF|ivanov@x.local
+    ┌─ АРТЕФАКТ · OW-40 · чужой Origin изменил профиль
+    │ Origin=https://attacker.invalid, POST /profile без CSRF token → HTTP 200
+    │ users.display_name|email: Иван Иванов|ivanov@office.local → OW40-CSRF|ivanov@x.local
+    └─
+[+] сервер принял state-changing POST без CSRF-защиты
+    → SQL UPDATE users SET display_name='Иван Иванов', email='ivanov@office.local' WHERE login='ivanov'
+    ← psql UPDATE 1

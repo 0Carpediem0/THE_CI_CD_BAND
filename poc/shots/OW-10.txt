@@ -1,0 +1,14 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-10
+################################################################################################
+== OW-10 · внутренняя цена доступна с токеном из каталога ==
+    → GET /api/v2/supply/pricing без токена
+    ← HTTP 403 {"error":"channel required"} 
+    → GET /api/v2/supply/pricing с X-Wallet-Channel
+    ← HTTP 200 [{"id":1,"code":"COFFEE","price_kop":45000,"cost_kop":28000,"supplier_note":"Поставщик: RoastLab, скидка при опте"},{"id":2,"code":"TEA","price_kop":32000,"cost_kop":19000,"supplier_note":"Поставщик: LeafCo"},{"id":3,"code":"SNACK","price_k...
+    ┌─ АРТЕФАКТ · OW-10 · раскрытие закупочной цены
+    │ без токена: HTTP 403; с токеном из OW-39: HTTP 200
+    │ ответ содержит cost_kop/supplier_note: [{"id":1,"code":"COFFEE","price_kop":45000,"cost_kop":28000,"supplier_note":"Поставщик: RoastLab, скидка при опте"},{"id":2,"code":"TEA","price_kop":32000,"cost_kop":19000,"supplier_note":"Поставщик: LeafCo"},{"id":3,"code":"SNACK","price_kop":27000,"cost_kop"...
+    └─
+[+] общий supply-token открыл внутренние цены обычной сессии

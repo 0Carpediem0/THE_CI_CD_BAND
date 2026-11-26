@@ -1,0 +1,24 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-37
+################################################################################################
+== OW-37 · журнал операций доступен роли employee ==
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → SQL UPDATE users SET role='employee' WHERE login='ivanov' RETURNING role;
+    ← psql employee
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → GET /ops/journal под role=employee
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Журнал · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-37 · employee прочитал служебный ops.log
+    │ users.role=employee; GET /ops/journal → HTTP 200
+    │ в ответе присутствует notify-redeem wallet-ops-9c2e и uname output
+    └─
+[+] служебный журнал доступен без admin-роли
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov' RETURNING role;
+    ← psql admin
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...

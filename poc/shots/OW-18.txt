@@ -1,0 +1,15 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-18
+################################################################################################
+== OW-18 · проверка URL обходится внутренним redirect ==
+    → POST /settings/notify notify_url=http://notify-mock/hooks/verify
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления о платеже · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goo...
+    → SQL SELECT count(*) FROM notify_settings WHERE user_id=(SELECT id FROM users WHERE login='ivanov') AND notify_url='http://notify-mock/hooks/verify'
+    ← psql 1
+    ┌─ АРТЕФАКТ · OW-18 · redirect пересёк URL allowlist
+    │ разрешённый URL: http://notify-mock/hooks/verify → mock отвечает 302 /service/status
+    │ GET после redirect вернул service=ok и ticket=wallet-ops-9c2e
+    │ POST /settings/notify → HTTP 200; сохранённая настройка count=1
+    └─
+[+] http.Client последовал редиректу за пределы проверенного /hooks/

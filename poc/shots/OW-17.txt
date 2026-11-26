@@ -1,0 +1,43 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-17
+################################################################################################
+== 3. OW-17: повтор платежа: подпись есть, а ограничений нет ==
+    · Подпись платежа — HMAC(константа PAYMENT_KEY, 'op:сумма:получатель'), ключ
+    · лежит в статике приложения (wallet.js). В подписи нет ни nonce, ни срока, ни
+    · привязки к сессии (handlers_money.go:368-401): проверяется только совпадение
+    · хеша. Значит одна и та же подпись проводит платёж сколько угодно раз, а поле
+    · to_login вообще меняет получателя мимо подписанного (строки 384-388).
+    → SQL SELECT id||' '||amount_kop||' '||to_user_id FROM operations WHERE to_user_id IS NOT NULL ORDER BY id LIMIT 1 OFFSET 1
+    ← psql 2 300 3
+    операция #2 из базы: сумма 300 коп, получатель 3
+    HMAC-SHA256(office-wallet-pay-key, '2:300:3') = 31ca118ef158d172ad6d...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941500
+    → SQL SELECT login FROM users WHERE id=3
+    ← psql sidorov
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 61600
+    → SQL SELECT count(*) FROM operations WHERE kind='transfer' AND memo='повтор операции'
+    ← psql 73
+    → POST /pay/replay  op_id=2&amount_kop=300&recipient=3&sig=<подпись посчитана сама> (повтор 1)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941200
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 61900
+    → POST /pay/replay  те же поля, та же подпись (повтор 2 — сервер не отличает)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189940900
+    → SQL SELECT balance_kop FROM users WHERE login='sidorov';
+    ← psql 62200
+    → SQL SELECT count(*) FROM operations WHERE kind='transfer' AND memo='повтор операции'
+    ← psql 75
+    ┌─ АРТЕФАКТ · OW-17 · одна подпись принята дважды
+    │ ivanov balance_kop: 189941500 → 189941200 → 189940900
+    │ sidorov balance_kop: 61600 → 61900 → 62200
+    │ operations с memo='повтор операции': 73 → 75
+    │ HTTP: 200 / 200
+    └─
+[+] две операции списаны и зачислены с одной подписью

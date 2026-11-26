@@ -1,0 +1,42 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-11
+################################################################################################
+== 10. OW-11: ложный успех корзины и неактивный товар ==
+    · cartAdd не проверяет ни существование товара, ни его флаг active
+    · (handlers_shop.go:123-135), ошибку FK он молча проглатывает и всё равно
+    · пишет flash «Добавлено в корзину». Дальше JOIN в loadCart отбрасывает
+    · несуществующие строки — товар исчезает из корзины, а пользователь уверен,
+    · что добавил. Неактивный товар, наоборот, в корзину попадает и покупается:
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=999 (нет в каталоге)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT count(*) FROM cart_items WHERE user_id=1;
+    ← psql 0
+    → GET /cart  (что реально в корзине)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-11 · несуществующий товар
+    │ POST /cart/add product_id=999 → HTTP 200; flash «Добавлено в корзину» показан
+    │ cart_items count=0; GET /cart → HTTP 200, строк товара нет
+    └─
+[+] flash «Добавлено», а в корзине 0 строк — товар молча пропал
+    → SQL UPDATE products SET active=FALSE WHERE id=4 RETURNING id, code, active;
+    ← psql 4|MUG|f
+    UPDATE 1
+    → POST /cart/add  product_id=4 (MUG, active=FALSE)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → GET /cart  (неактивный товар в корзине)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT count(*) FROM cart_items c JOIN products p ON p.id=c.product_id WHERE c.user_id=1 AND p.id=4 AND p.active=FALSE
+    ← psql 1
+    ┌─ АРТЕФАКТ · OW-11 · товар active=FALSE в корзине
+    │ product id=4 active=FALSE; строка cart_items JOIN products count=1
+    │ GET /cart отобразил «Кружка» несмотря на active=FALSE
+    └─
+[+] товар с active=FALSE добавлен в корзину — фильтрации нет
+    → SQL UPDATE products SET active=TRUE WHERE id=4;
+    ← psql UPDATE 1
+    → SQL DELETE FROM cart_items WHERE user_id=1;
+    ← psql DELETE 1
+    каталог и корзина возвращены в исходное состояние

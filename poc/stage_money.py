@@ -93,43 +93,54 @@ def main():
         "в заказе, ни суммой, ни знаком (handlers_shop.go:350-363): qty=100 печатает",
         "сотню стоимости заказа, qty=-1 уводит деньги — то, и другое проводится,",
         "при отрицательном только пишется строка в anomaly_log, никто не реагирует.")
+    # корзина могла быть засорена прошлыми прогонами — чистим, чтобы заказ
+    # был ровно на один товар, и берём ожидаемую дельту из суммы самого заказа
+    db("DELETE FROM cart_items WHERE user_id=1")
     ord1 = new_order("обычный заказ под возврат", client)
     if not ord1:
         fail("заказ не оформился")
         return 1
-    say("заказ #%s оформлен (450₽), делаем возврат с qty=100:" % ord1)
+    total1 = db("SELECT total_kop FROM orders WHERE id=%s" % ord1)
+    say("заказ #%s оформлен (%s коп), делаем возврат с qty=100:" % (ord1, total1))
     r1 = user_balance_kop("ivanov")
-    req("POST /orders/%s/return  qty=100 (refund = 450₽ × 100)" % ord1,
+    req("POST /orders/%s/return  qty=100 (refund = %s коп × 100)" % (ord1, total1),
         "/orders/%s/return" % ord1, client=client, data={"qty": "100"})
     r2 = user_balance_kop("ivanov")
     return_row = db("SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=%s" % ord1)
-    if r1 and r2 and int(r2) - int(r1) == 4500000:
+    expected1 = int(total1) * 100 if total1 else -1
+    if r1 and r2 and int(r2) - int(r1) == expected1:
         artifact("OW-05 · завышенный возврат",
-                 "balance_kop ivanov: %s → %s (дельта +4500000 коп)" % (r1, r2),
+                 "balance_kop ivanov: %s → %s (дельта %+d коп = цена заказа × 100)"
+                 % (r1, r2, expected1),
                  "заказ после возврата: %s" % return_row)
         ok("qty=100 начислил в 100 раз больше цены заказа")
     else:
-        fail("ожидали +4500000 коп, получили balance_kop %s → %s; заказ %s"
-             % (r1, r2, return_row))
+        fail("ожидали %+d коп, получили balance_kop %s → %s; заказ %s"
+             % (expected1, r1, r2, return_row))
 
+    db("DELETE FROM cart_items WHERE user_id=1")
     ord2 = new_order("второй заказ под отрицательный возврат", client)
     if not ord2:
         fail("второй заказ не оформился")
         return 1
-    say("заказ #%s оформлен, теперь qty=-1 — деньги уходят со счёта:" % ord2)
+    total2 = db("SELECT total_kop FROM orders WHERE id=%s" % ord2)
+    say("заказ #%s оформлен (%s коп), теперь qty=-1 — деньги уходят со счёта:"
+        % (ord2, total2))
     r3 = user_balance_kop("ivanov")
-    req("POST /orders/%s/return  qty=-1 (refund = -450₽)" % ord2,
+    req("POST /orders/%s/return  qty=-1 (refund = -%s коп)" % (ord2, total2),
         "/orders/%s/return" % ord2, client=client, data={"qty": "-1"})
     r4 = user_balance_kop("ivanov")
     return_row2 = db("SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=%s" % ord2)
-    if r3 and r4 and int(r4) - int(r3) == -45000:
+    expected2 = -int(total2) if total2 else 1
+    if r3 and r4 and int(r4) - int(r3) == expected2:
         artifact("OW-05 · отрицательное количество возврата",
-                 "balance_kop ivanov: %s → %s (дельта -45000 коп)" % (r3, r4),
+                 "balance_kop ivanov: %s → %s (дельта %+d коп)" % (r3, r4, expected2),
                  "заказ после возврата: %s" % return_row2)
         ok("qty=-1 списал цену заказа, но обработан как возврат")
     else:
-        fail("ожидали -45000 коп, получили balance_kop %s → %s; заказ %s"
-             % (r3, r4, return_row2))
+        fail("ожидали %+d коп, получили balance_kop %s → %s; заказ %s"
+             % (expected2, r3, r4, return_row2))
+    db("DELETE FROM cart_items WHERE user_id=1")
 
     step("5. OW-04: отмена чужого заказа: деньги идут его владельцу")
     say("Отмена заказа: проверка владельца стоит только на показе страницы, на самом",

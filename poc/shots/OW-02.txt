@@ -1,0 +1,28 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-02
+################################################################################################
+== 6. OW-02: котировка по дешёвой корзине, оплата после подорожания ==
+    · Котировка фиксирует цену в момент запроса (checkoutQuote), а при подтверждении
+    · списывается именно она — корзина читается заново, но только чтобы положить
+    · товары в заказ (handlers_shop.go:218-250). Расхождение пишется в anomaly_log
+    · и никого не волнует. Значит: берём котировку на дешёвый товар, добавляем
+    · дорогой, платим по старой цене — оба товара в заказе.
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → POST /cart/add  product_id=3 (SNACK 270₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  (котировка: корзина = 270₽)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /cart/add  product_id=4 (MUG 600₽) — уже ПОСЛЕ котировки
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/confirm  quote_id=150 (платим по старой котировке)
+    ← HTTP 302 redirect=http://localhost:18081/orders/206  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT id||'|'||total_kop||'|'||lines_json FROM orders ORDER BY id DESC LIMIT 1;
+    ← psql 206|27000|[{"product_id":3,"title":"Набор снеков","price_kop":27000,"qty":1},{"product_id":4,"title":"Кружка Office","price_kop":60000,"qty":1}]
+    ┌─ АРТЕФАКТ · OW-02 · котировка дешевле состава заказа
+    │ строка orders: 206|27000|[{"product_id":3,"title":"Набор снеков","price_kop":27000,"qty":1},{"product_id":4,"title":"Кружка Office","price_kop":60000,"qty":1}]
+    │ списано по quote 27000 коп, строки заказа включают снек и кружку (87000 коп)
+    │ баланс ivanov: 1942609,00 → 1942339,00 руб.
+    └─
+[+] заказ #206: total=27000 коп, а в строках снек И кружка — заплатил 270₽, получил 870₽ (баланс 1942609,00 -> 1942339,00 руб.)

