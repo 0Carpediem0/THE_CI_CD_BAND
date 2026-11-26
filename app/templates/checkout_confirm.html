@@ -11,6 +11,7 @@
       <a class="btn ghost" href="/shop">В магазин</a>
       <a class="btn secondary" href="/cart">Корзина</a>
       <form method="post" action="/checkout/confirm" style="display:inline">
+        {{template "csrf" .}}
         <input type="hidden" name="quote_id" value="{{index .Data "QuoteID"}}">
         <button class="btn" type="submit">Подтвердить оплату</button>
       </form>

@@ -8,12 +8,9 @@
     <p>Сумма: <strong>{{index .Data "Amount"}}</strong> · комиссия {{index .Data "Fee"}}</p>
     <p class="muted">Комментарий: {{index .Data "Memo"}}</p>
     <form method="post" action="/transfer/confirm">
+      {{template "csrf" .}}
       <input type="hidden" name="draft_id" value="{{index .Data "DraftID"}}">
-      <label>Тип операции</label>
-      <select name="op_type">
-        <option value="transfer" {{if eq (index .Data "OpType") "transfer"}}selected{{end}}>Перевод</option>
-        <option value="tip_boss">Чаевые руководителю</option>
-      </select>
+      <p class="muted">Тип: {{index .Data "OpType"}}</p>
       <button class="btn" type="submit">Подтвердить</button>
       <a class="btn secondary" href="/transfer/new">Отмена</a>
     </form>

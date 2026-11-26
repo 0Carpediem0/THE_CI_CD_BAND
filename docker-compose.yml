@@ -4,7 +4,8 @@ services:
     ports:
       - "${WALLET_PORT:-18081}:8080"
     environment:
-      DATABASE_URL: postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+      DATABASE_URL: postgres://wallet:${POSTGRES_PASSWORD}@db:5432/wallet?sslmode=disable
+      DEV_INSECURE: "1"
       MAIL_HOST: mail
       MAIL_PORT: "1025"
       MAIL_UI: "http://localhost:${MAIL_PORT_UI:-18025}"
@@ -27,7 +28,7 @@ services:
     environment:
       POSTGRES_DB: wallet
       POSTGRES_USER: wallet
-      POSTGRES_PASSWORD: wallet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - ./app/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./app/sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro

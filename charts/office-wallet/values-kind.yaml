@@ -20,9 +20,13 @@ mailIngress:
         - path: /
           pathType: Prefix
 
+postgres:
+  sslmode: disable
+
 app:
   publicBase: "http://office-wallet.local"
   mailUi: "http://office-wallet-mail.local"
+  devInsecure: "1"
 
 image:
   app:

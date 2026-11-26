@@ -19,6 +19,10 @@ spec:
         {{- include "office-wallet.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
+      securityContext:
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -27,10 +31,40 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if ne .Values.postgres.sslmode "disable" }}
+      initContainers:
+        - name: pg-certs
+          image: {{ .Values.image.postgres | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "cp /in/tls.crt /in/tls.key /certs/ && chown 70:70 /certs/tls.crt /certs/tls.key && chmod 600 /certs/tls.key"]
+          volumeMounts:
+            - name: pg-tls
+              mountPath: /in
+              readOnly: true
+            - name: pg-certs
+              mountPath: /certs
+      {{- end }}
       containers:
         - name: postgres
           image: {{ .Values.image.postgres | quote }}
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          {{- if ne .Values.postgres.sslmode "disable" }}
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/var/lib/postgresql/certs/tls.crt
+            - -c
+            - ssl_key_file=/var/lib/postgresql/certs/tls.key
+          {{- end }}
           env:
             - name: POSTGRES_DB
               valueFrom:
@@ -55,8 +89,17 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: pgrun
+              mountPath: /var/run/postgresql
             - name: initdb
               mountPath: /docker-entrypoint-initdb.d
+            {{- if ne .Values.postgres.sslmode "disable" }}
+            - name: pg-certs
+              mountPath: /var/lib/postgresql/certs
+              readOnly: true
+            {{- end }}
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", {{ .Values.postgres.username | quote }}, "-d", {{ .Values.postgres.database | quote }}]
@@ -70,6 +113,10 @@ spec:
           resources:
             {{- toYaml .Values.resources.db | nindent 12 }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: pgrun
+          emptyDir: {}
         - name: data
           {{- if .Values.postgres.persistence.enabled }}
           persistentVolumeClaim:
@@ -80,6 +127,13 @@ spec:
         - name: initdb
           configMap:
             name: {{ include "office-wallet.fullname" . }}-sql
+        {{- if ne .Values.postgres.sslmode "disable" }}
+        - name: pg-tls
+          secret:
+            secretName: {{ include "office-wallet.fullname" . }}-pg-tls
+        - name: pg-certs
+          emptyDir: {}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

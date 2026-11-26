@@ -61,3 +61,11 @@ if [ -z "${APP_PAYMENT_KEY:-}" ]; then
 fi
 export APP_PAYMENT_KEY
 
+if [ -z "${MAIL_UI_PASSWORD:-}" ]; then
+  MAIL_UI_PASSWORD=$(get_existing 'MAIL_UI_PASSWORD')
+fi
+if [ -z "${MAIL_UI_PASSWORD:-}" ]; then
+  MAIL_UI_PASSWORD=$(new_password)
+fi
+export MAIL_UI_PASSWORD
+

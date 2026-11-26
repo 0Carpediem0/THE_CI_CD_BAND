@@ -5,6 +5,7 @@
   <section class="panel">
     <h1>Ручная корректировка</h1>
     <form method="post" action="/accounting/adjust">
+      {{template "csrf" .}}
       <label>Логин</label>
       <input name="login" required>
       <label>Дельта, ₽ (может быть отрицательной)</label>

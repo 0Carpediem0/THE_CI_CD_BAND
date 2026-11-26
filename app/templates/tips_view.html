@@ -11,7 +11,7 @@
     <p class="muted">{{index .Data "Created"}}</p>
     <div class="panel" style="background:#12141c;margin-top:12px">
       <div class="muted" style="margin-bottom:8px">Сообщение</div>
-      <div class="tip-body">{{.TipHTML}}</div>
+      <div class="tip-body">{{index .Data "Memo"}}</div>
     </div>
     <div class="actions"><a class="btn secondary" href="/tips/received">К списку</a></div>
   </section>

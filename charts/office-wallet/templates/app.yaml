@@ -17,6 +17,12 @@ spec:
         {{- include "office-wallet.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: app
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -29,6 +35,11 @@ spec:
         - name: app
           image: "{{ .Values.image.app.repository }}:{{ .Values.image.app.tag }}"
           imagePullPolicy: {{ .Values.image.app.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: ADDR
               value: ":8080"
@@ -57,12 +68,21 @@ spec:
                   key: PAYMENT_KEY
             - name: PUBLIC_BASE
               value: {{ .Values.app.publicBase | quote }}
+            - name: DEV_INSECURE
+              value: {{ .Values.app.devInsecure | quote }}
           ports:
             - containerPort: 8080
               name: http
           volumeMounts:
             - name: exports
               mountPath: /app/exports
+            - name: tmp
+              mountPath: /tmp
+            {{- if ne .Values.postgres.sslmode "disable" }}
+            - name: pg-ca
+              mountPath: /etc/pg-ca
+              readOnly: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /login
@@ -78,6 +98,8 @@ spec:
           resources:
             {{- toYaml .Values.resources.app | nindent 12 }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: exports
           {{- if .Values.app.persistence.enabled }}
           persistentVolumeClaim:
@@ -85,6 +107,14 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if ne .Values.postgres.sslmode "disable" }}
+        - name: pg-ca
+          secret:
+            secretName: {{ include "office-wallet.fullname" . }}-pg-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

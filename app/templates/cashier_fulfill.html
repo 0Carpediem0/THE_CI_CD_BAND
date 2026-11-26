@@ -5,6 +5,7 @@
     <h1>Выдача заказа #{{index .Data "ID"}}</h1>
     <p>Статус: <strong>{{index .Data "Status"}}</strong> · сумма {{index .Data "Total"}}</p>
     <form method="post" action="/cashier/fulfill/{{index .Data "ID"}}">
+      {{template "csrf" .}}
       <button class="btn" type="submit">Подтвердить выдачу</button>
       <a class="btn secondary" href="/orders/{{index .Data "ID"}}">Назад</a>
     </form>

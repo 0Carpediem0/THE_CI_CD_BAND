@@ -6,6 +6,7 @@
     <h1>Чаевые</h1>
     <p class="muted">В интерфейсе действует мягкий лимит 50 ₽.</p>
     <form method="post" action="/tips/new" enctype="multipart/form-data" data-tip-form>
+      {{template "csrf" .}}
       <label>Получатель</label>
       <input name="recipient" required>
       <label>Сумма, ₽</label>

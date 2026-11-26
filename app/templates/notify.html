@@ -8,6 +8,7 @@
     {{if index .Data "Error"}}<div class="flash bad">{{index .Data "Error"}}</div>{{end}}
     {{if index .Data "Fetched"}}<pre class="receipt-preview">{{index .Data "Fetched"}}</pre>{{end}}
     <form method="post" action="/settings/notify">
+      {{template "csrf" .}}
       <label>Callback URL</label>
       <input name="notify_url" value="{{index .Data "NotifyURL"}}" placeholder="http://…">
       <button class="btn" type="submit">Сохранить и проверить</button>

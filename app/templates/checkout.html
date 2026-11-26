@@ -7,6 +7,7 @@
     <p>Сумма по каталогу: <strong>{{index .Data "Sum"}}</strong></p>
     <p class="muted">Сначала фиксируется котировка, затем подтверждение оплаты.</p>
     <form method="post" action="/checkout/quote">
+      {{template "csrf" .}}
       <label>Промокод</label>
       <input name="promo_code" placeholder="OFFICE10">
       <label>Чаевые курьеру, коп.</label>

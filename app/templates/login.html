@@ -1,6 +1,7 @@
 {{template "head" .}}
 <div class="auth-shell">
   <form class="auth-card" method="post" action="/login">
+    {{template "csrf" .}}
     <div class="brand-line">
       <span class="logo-mark"></span>
       <span>Office Wallet</span>

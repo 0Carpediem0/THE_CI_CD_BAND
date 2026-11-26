@@ -186,7 +186,7 @@ kubectl delete namespace office-wallet
 
 | Переменная | Назначение | По умолчанию |
 |------------|------------|--------------|
-| `DATABASE_URL` | PostgreSQL DSN | `postgres://wallet:wallet@db:5432/wallet?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL DSN | обязательна, из окружения; `sslmode=disable` только при `DEV_INSECURE=1` |
 | `MAIL_HOST` / `MAIL_PORT` | SMTP Mailpit | `mail` / `1025` |
 | `MAIL_UI` | Ссылка на UI почты | `http://localhost:18025` |
 | `INTERNAL_NOTIFY_HOST` | Хост notify-mock | `notify-mock` |

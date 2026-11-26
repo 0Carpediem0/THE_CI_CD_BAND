@@ -17,6 +17,14 @@
   --font: "Outfit", "Segoe UI", sans-serif;
 }
 
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/static/fonts/outfit-latin.woff2") format("woff2");
+}
+
 * { box-sizing: border-box; }
 
 html, body { min-height: 100%; }

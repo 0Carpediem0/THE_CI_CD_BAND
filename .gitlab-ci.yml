@@ -57,6 +57,10 @@ deploy:
       # RECREATE=true: uninstall release and delete only this application's PVCs.
       sh "$CI_PROJECT_DIR/ci/recreate.sh"
       # Generate application-only credentials, reusing values from the live Secret on normal upgrades.
+      if grep -Eq '(echo|printf).*(DB_PASSWORD|APP_SESSION_KEY|APP_PAYMENT_KEY|MAIL_UI_PASSWORD)' "$CI_PROJECT_DIR/ci/app-credentials.sh"; then
+        echo "credential logging is forbidden" >&2
+        exit 1
+      fi
       . "$CI_PROJECT_DIR/ci/app-credentials.sh"
       # imagePullSecret in target namespace. CI SA must allow secrets create/update.
       mkdir -p "$CI_PROJECT_DIR/.docker"
@@ -76,7 +80,7 @@ deploy:
       K8S_SECONDARY_DOMAIN="${K8S_NAMESPACE}-secondary.devsecops-contest.ru"
       # Keep --namespace fixed; no namespace creation / ClusterRole needed.
       set -- helm upgrade --install "office-wallet" "./charts/office-wallet" --namespace "$K8S_NAMESPACE" --wait --timeout 10m
-      set -- "$@" --set-string image.app.repository="$NEXUS_REGISTRY/docker-hosted/office-wallet-app" --set-string image.app.tag="$CI_COMMIT_SHA" --set-string image.mock.repository="$NEXUS_REGISTRY/docker-hosted/office-wallet-mock" --set-string image.mock.tag="$CI_COMMIT_SHA" --set-string postgres.password="$DB_PASSWORD" --set-string app.sessionKey="$APP_SESSION_KEY" --set-string app.paymentKey="$APP_PAYMENT_KEY"
+      set -- "$@" --set-string image.app.repository="$NEXUS_REGISTRY/docker-hosted/office-wallet-app" --set-string image.app.tag="$CI_COMMIT_SHA" --set-string image.mock.repository="$NEXUS_REGISTRY/docker-hosted/office-wallet-mock" --set-string image.mock.tag="$CI_COMMIT_SHA" --set-string postgres.password="$DB_PASSWORD" --set-string app.sessionKey="$APP_SESSION_KEY" --set-string app.paymentKey="$APP_PAYMENT_KEY" --set-string mail.uiPassword="$MAIL_UI_PASSWORD"
       # Основной Ingress
       set -- "$@" \
         --set-string 'ingress.hosts[0].host'="$K8S_APP_DOMAIN" \

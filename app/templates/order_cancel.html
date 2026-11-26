@@ -5,6 +5,7 @@
     <h1>Отмена заказа #{{index .Data "ID"}}</h1>
     <p>К возврату: <strong>{{index .Data "Total"}}</strong></p>
     <form method="post" action="/orders/{{index .Data "ID"}}/cancel">
+      {{template "csrf" .}}
       <button class="btn" type="submit">Подтвердить отмену</button>
       <a class="btn secondary" href="/orders/{{index .Data "ID"}}">Назад</a>
     </form>

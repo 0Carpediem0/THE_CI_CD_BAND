@@ -5,9 +5,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · Office Wallet</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/wallet.css">
   <script src="/static/wallet.js" defer></script>
   <script src="/static/pay.js" defer></script>
@@ -37,7 +34,7 @@
     {{if .User.IsAdmin}}<a href="/admin/secrets">Служебное</a><a href="/gateway/sms">SMS-шлюз</a>{{end}}
     <a href="/profile">Профиль</a>
     <a href="/mail">Почта</a>
-    <a href="/ops/journal">Журнал</a>
+    {{if .User.IsAdmin}}<a href="/ops/journal">Журнал</a>{{end}}
     <a href="/logout" class="nav-mute">Выход</a>
   </nav>
   <div class="who">
@@ -47,6 +44,8 @@
   {{end}}
 </header>
 {{end}}
+
+{{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}
 
 {{define "flash"}}
 {{if .Flash}}

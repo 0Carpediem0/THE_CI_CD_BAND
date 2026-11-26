@@ -18,6 +18,12 @@ spec:
         {{- include "office-wallet.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mail
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -30,13 +36,29 @@ spec:
         - name: mailpit
           image: {{ .Values.image.mailpit | quote }}
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            {{- if .Values.mail.uiPassword }}
+            - name: MP_UI_AUTH
+              value: {{ printf "%s:%s" .Values.mail.uiUser .Values.mail.uiPassword | quote }}
+            {{- end }}
           ports:
             - containerPort: 8025
               name: ui
             - containerPort: 1025
               name: smtp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources.mail | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

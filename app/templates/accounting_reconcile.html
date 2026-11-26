@@ -5,10 +5,12 @@
   <section class="panel">
     <h1>Сверка операций</h1>
     <form method="post" action="/accounting/reconcile" enctype="multipart/form-data" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      {{template "csrf" .}}
       <div style="flex:1"><label>Фильтр по комментарию</label><input name="memo" value="{{index .Data "Memo"}}"></div>
       <button class="btn" type="submit">Фильтровать</button>
     </form>
     <form method="post" action="/accounting/reconcile" enctype="multipart/form-data" style="margin-top:12px">
+      {{template "csrf" .}}
       <label>Или взять комментарий из операции #</label>
       <input name="from_op" placeholder="id">
       <button class="btn secondary" type="submit">Сверить по операции</button>

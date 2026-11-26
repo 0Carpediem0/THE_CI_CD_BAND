@@ -5,6 +5,7 @@
   <section class="panel">
     <h1>Профиль</h1>
     <form method="post" action="/profile">
+      {{template "csrf" .}}
       <label>Отображаемое имя</label>
       <input name="display_name" value="{{.User.DisplayName}}">
       <label>Email</label>

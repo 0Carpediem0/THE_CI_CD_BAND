@@ -4,7 +4,9 @@
   <section class="panel">
     <h1>Возврат заказа #{{index .Data "ID"}}</h1>
     <p class="muted">Текущий статус: {{index .Data "Status"}}</p>
+    <p class="muted">Максимум к возврату: {{index .Data "Total"}}</p>
     <form method="post" action="/orders/{{index .Data "ID"}}/return">
+      {{template "csrf" .}}
       <label>Количество</label>
       <input name="qty" value="1">
       <button class="btn" type="submit">Оформить возврат</button>

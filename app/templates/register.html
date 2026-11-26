@@ -1,6 +1,7 @@
 {{template "head" .}}
 <div class="auth-shell">
   <form class="auth-card" method="post" action="/register">
+    {{template "csrf" .}}
     <div class="brand-line"><span class="logo-mark"></span><span>Office Wallet</span></div>
     <h1 style="margin:0 0 14px">Регистрация</h1>
     {{if .Flash}}<div class="flash bad">{{.Flash}}</div>{{end}}

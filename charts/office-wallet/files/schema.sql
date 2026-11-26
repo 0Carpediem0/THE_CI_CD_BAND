@@ -10,6 +10,7 @@ CREATE TABLE users (
   balance_kop BIGINT NOT NULL DEFAULT 0,
   overdraft_limit_kop BIGINT NOT NULL DEFAULT 0,
   blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  session_version INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -55,6 +56,7 @@ CREATE TABLE orders (
   total_kop BIGINT NOT NULL,
   lines_json TEXT NOT NULL,
   item_comment TEXT,
+  refunded_kop BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -74,6 +76,7 @@ CREATE TABLE password_resets (
   user_id INT NOT NULL REFERENCES users(id),
   sms_code TEXT NOT NULL,
   used BOOLEAN NOT NULL DEFAULT FALSE,
+  attempts INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -93,6 +96,7 @@ CREATE TABLE checkout_quotes (
   promo_code TEXT NOT NULL DEFAULT '',
   tip_kop BIGINT NOT NULL DEFAULT 0,
   item_comment TEXT NOT NULL DEFAULT '',
+  lines_json TEXT NOT NULL DEFAULT '',
   used BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

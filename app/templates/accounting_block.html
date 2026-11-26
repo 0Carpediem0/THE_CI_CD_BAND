@@ -14,6 +14,7 @@
           <td>{{if .Blocked}}заблокирован{{else}}активен{{end}}</td>
           <td>
             <form method="post" action="/accounting/block" style="display:inline">
+              {{template "csrf" $}}
               <input type="hidden" name="login" value="{{.Login}}">
               {{if .Blocked}}
                 <input type="hidden" name="blocked" value="0">

@@ -17,6 +17,12 @@ spec:
         {{- include "office-wallet.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: notify-mock
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -29,11 +35,26 @@ spec:
         - name: mock
           image: "{{ .Values.image.mock.repository }}:{{ .Values.image.mock.tag }}"
           imagePullPolicy: {{ .Values.image.mock.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
           resources:
             {{- toYaml .Values.resources.mock | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -14,7 +14,10 @@
       {{if index .Data "Owner"}}
         <a class="btn secondary" href="/orders/{{index .Data "ID"}}/cancel">Отмена</a>
         <a class="btn secondary" href="/orders/{{index .Data "ID"}}/return">Возврат</a>
-        <a class="btn ghost" href="/orders/{{index .Data "ID"}}/received">Получил</a>
+        <form method="post" action="/orders/{{index .Data "ID"}}/received" style="display:inline">
+          {{template "csrf" .}}
+          <button class="btn ghost" type="submit">Получил</button>
+        </form>
         <a class="btn ghost" href="/orders/{{index .Data "ID"}}/preview">Превью чека</a>
       {{end}}
       {{if index .Data "Cashier"}}

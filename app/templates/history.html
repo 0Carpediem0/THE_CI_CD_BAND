@@ -4,7 +4,7 @@
   {{template "flash" .}}
   <section class="panel">
     <h1>История</h1>
-    <p class="muted">Результаты по запросу: <span>{{.QRaw}}</span></p>
+    <p class="muted">Результаты по запросу: <span>{{index .Data "Q"}}</span></p>
     <form method="get" action="/history" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
       <div style="flex:1;min-width:180px">
         <label>Поиск</label>
@@ -24,16 +24,7 @@
           <td>{{.Amount}}</td>
           <td>{{.Status}}</td>
           <td>{{.Memo}}</td>
-          <td>
-            <form method="post" action="/pay/replay" style="display:flex;gap:6px;flex-wrap:wrap">
-              <input type="hidden" name="op_id" value="{{.ID}}">
-              <input type="hidden" name="amount_kop" value="{{.AmountKop}}">
-              <input type="hidden" name="recipient" value="{{.ToID}}">
-              <input type="hidden" name="sig" value="{{.ReplaySig}}">
-              <input name="to_login" placeholder="логин" style="margin:0;min-width:90px;padding:8px 10px">
-              <button class="btn ghost" type="submit" style="padding:8px 12px">Повтор</button>
-            </form>
-          </td>
+          <td><a class="btn ghost" href="/transfer/new" style="padding:8px 12px">Новый перевод</a></td>
         </tr>
       {{else}}
         <tr><td colspan="6" class="muted">Ничего не найдено</td></tr>

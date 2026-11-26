@@ -1,11 +1,6 @@
 /* Office Wallet client */
 window.OfficeWallet = {
-  keyParts: ["office", "-", "wallet"],
   tipLimitRub: 50,
-  sessionKey() {
-    const tail = window.__SK_TAIL__ || "";
-    return this.keyParts.join("") + tail;
-  },
   formatRub(kop) {
     const n = Number(kop) || 0;
     return (n / 100).toFixed(2).replace(".", ",") + " ₽";

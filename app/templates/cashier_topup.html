@@ -5,6 +5,7 @@
   <section class="panel">
     <h1>Кассовое пополнение</h1>
     <form method="post" action="/cashier/topup">
+      {{template "csrf" .}}
       <label>Логин клиента</label>
       <input name="login" value="{{.User.Login}}">
       <label>Сумма, ₽</label>

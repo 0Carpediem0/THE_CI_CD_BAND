@@ -6,9 +6,9 @@
     <section class="panel">
       <h1>Перевод</h1>
       <form method="post" action="/transfer/new" enctype="multipart/form-data">
+      {{template "csrf" .}}
         <label>Получатель (логин)</label>
-        <input name="recipient" list="rcpt" required>
-        <datalist id="rcpt"></datalist>
+        <input name="recipient" required>
         <label>Сумма, ₽</label>
         <input name="amount_rub" placeholder="10,00" required>
         <label>Комментарий</label>
@@ -17,23 +17,9 @@
       </form>
     </section>
     <section class="panel">
-      <h2>Подсказки получателей</h2>
-      <p class="muted">Список подгружается для удобного выбора.</p>
-      <pre id="rcpt-json" class="mono muted" style="white-space:pre-wrap"></pre>
+      <h2>Получатель</h2>
+      <p class="muted">Укажите логин целиком. Справочник сотрудников не выводится.</p>
     </section>
   </div>
 </main>
-<script>
-fetch("/api/recipients").then(r=>r.json()).then(list=>{
-  const dl = document.getElementById("rcpt");
-  const pre = document.getElementById("rcpt-json");
-  pre.textContent = JSON.stringify(list, null, 2);
-  list.forEach(x=>{
-    const o=document.createElement("option");
-    o.value=x.login;
-    o.label=x.name;
-    dl.appendChild(o);
-  });
-});
-</script>
 {{template "foot" .}}
