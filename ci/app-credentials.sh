@@ -4,7 +4,6 @@ set -eu
 # This file is sourced by deploy job AFTER kubeconfig and optional RECREATE cleanup.
 # Existing chart-owned Secret is the source of truth on regular upgrades.
 # On fresh install / RECREATE, generate independent app credentials.
-# WARNING: credentials are printed in GitLab job logs as requested for the dev contest.
 SECRET_NAME=office-wallet-db
 
 # Check existence once: a Forbidden error must NOT silently rotate database credentials.
