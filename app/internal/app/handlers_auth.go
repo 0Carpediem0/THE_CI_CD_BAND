@@ -139,18 +139,53 @@ func (s *Server) passwordReset(w http.ResponseWriter, r *http.Request) {
                 s.render(w, r, "password_reset.html", Page{Title: "Новый пароль", Data: map[string]any{"RID": ridStr}})
                 return
         }
-        rid, _ := strconv.Atoi(ridStr)
-        code := strings.TrimSpace(r.FormValue("sms_code"))
-        pass := r.FormValue("password")
-        var uid int
-        err := s.db.QueryRow(`SELECT user_id FROM password_resets WHERE id=$1 AND sms_code=$2 AND used=FALSE ORDER BY id DESC LIMIT 1`, rid, code).Scan(&uid)
-        if err != nil || rid == 0 || code == "" {
-                s.render(w, r, "password_reset.html", Page{Title: "Новый пароль", Flash: "Неверный код или заявка", Data: map[string]any{"RID": ridStr}})
+        if r.Method != http.MethodPost {
+                w.Header().Set("Allow", "GET, POST")
+                http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
                 return
         }
-        hash, _ := hashPassword(pass)
-        _, _ = s.db.Exec(`UPDATE users SET password_hash=$1 WHERE id=$2`, hash, uid)
-        _, _ = s.db.Exec(`UPDATE password_resets SET used=TRUE WHERE id=$1`, rid)
+        rid, err := strconv.Atoi(ridStr)
+        code := strings.TrimSpace(r.FormValue("sms_code"))
+        invalid := func() {
+                s.render(w, r, "password_reset.html", Page{Title: "Новый пароль", Flash: "Неверный код или заявка", Data: map[string]any{"RID": ridStr}})
+        }
+        if err != nil || rid <= 0 || len(code) != 6 {
+                invalid()
+                return
+        }
+        pass := r.FormValue("password")
+        if pass == "" {
+                http.Error(w, "Введите пароль", http.StatusBadRequest)
+                return
+        }
+        hash, err := hashPassword(pass)
+        if err != nil {
+                http.Error(w, "Некорректный пароль", http.StatusBadRequest)
+                return
+        }
+        ctx := r.Context()
+        tx, err := s.db.BeginTx(ctx, nil)
+        if err != nil {
+                http.Error(w, "Не удалось обновить пароль", http.StatusInternalServerError)
+                return
+        }
+        defer tx.Rollback()
+        var uid int
+        err = tx.QueryRowContext(ctx, `UPDATE password_resets SET used=TRUE
+                WHERE id=$1 AND sms_code=$2 AND NOT used AND created_at >= now() - interval '15 minutes'
+                RETURNING user_id`, rid, code).Scan(&uid)
+        if err != nil {
+                invalid()
+                return
+        }
+        if _, err := tx.ExecContext(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2`, hash, uid); err != nil {
+                http.Error(w, "Не удалось обновить пароль", http.StatusInternalServerError)
+                return
+        }
+        if err := tx.Commit(); err != nil {
+                http.Error(w, "Не удалось обновить пароль", http.StatusInternalServerError)
+                return
+        }
         s.flash(w, "Пароль обновлён", true)
         http.Redirect(w, r, "/login", http.StatusFound)
 }
@@ -189,7 +224,11 @@ func (s *Server) mailBox(w http.ResponseWriter, r *http.Request) {
                 http.Redirect(w, r, "/mail", http.StatusFound)
                 return
         }
-        rows, _ := s.db.Query(`SELECT recipient, subject, body, created_at::text FROM mail_outbox ORDER BY id DESC LIMIT 50`)
+        rows, err := s.db.QueryContext(r.Context(), `SELECT recipient, subject, body, created_at::text FROM mail_outbox WHERE recipient=$1 ORDER BY id DESC LIMIT 50`, u.Email)
+        if err != nil {
+                http.Error(w, "Не удалось загрузить письма", http.StatusInternalServerError)
+                return
+        }
         defer rows.Close()
         var msgs []map[string]any
         for rows.Next() {
