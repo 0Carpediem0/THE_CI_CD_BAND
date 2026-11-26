@@ -6,6 +6,7 @@ import (
         "fmt"
         "html/template"
         "io"
+        "math"
         "net/http"
         "os"
         "os/exec"
@@ -205,17 +206,23 @@ func (s *Server) transferConfirm(w http.ResponseWriter, r *http.Request) {
         if draftID == 0 {
                 draftID, _ = strconv.Atoi(r.FormValue("draft_id"))
         }
+        ctx := r.Context()
         var recipientID int
         var amount, fee int64
         var memo, opType string
-        err := s.db.QueryRow(`SELECT recipient_id, amount_kop, fee_kop, memo, op_type FROM transfer_drafts WHERE id=$1 AND user_id=$2`, draftID, u.ID).
-                Scan(&recipientID, &amount, &fee, &memo, &opType)
-        if err != nil {
-                http.Redirect(w, r, "/transfer/new", http.StatusFound)
-                return
-        }
-        rcpt, _ := s.getUserByID(recipientID)
         if r.Method == http.MethodGet {
+                err := s.db.QueryRowContext(ctx, `SELECT recipient_id, amount_kop, fee_kop, memo, op_type
+                        FROM transfer_drafts WHERE id=$1 AND user_id=$2`, draftID, u.ID).
+                        Scan(&recipientID, &amount, &fee, &memo, &opType)
+                if err != nil {
+                        http.Redirect(w, r, "/transfer/new", http.StatusFound)
+                        return
+                }
+                rcpt, err := s.getUserByID(recipientID)
+                if err != nil || rcpt == nil {
+                        http.NotFound(w, r)
+                        return
+                }
                 s.render(w, r, "transfer_confirm.html", Page{Title: "Подтверждение перевода", User: u, Data: map[string]any{
                         "DraftID": draftID, "Recipient": rcpt.Login, "RecipientName": rcpt.DisplayName,
                         "Amount": formatRub(amount), "Fee": formatRub(fee), "Memo": memo, "OpType": opType,
@@ -223,34 +230,99 @@ func (s *Server) transferConfirm(w http.ResponseWriter, r *http.Request) {
                 }})
                 return
         }
-        if v := r.FormValue("op_type"); v != "" {
-                opType = v
+        if r.Method != http.MethodPost {
+                w.Header().Set("Allow", "GET, POST")
+                http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+                return
         }
 
-        fresh, _ := s.getUserByID(u.ID)
-        total := amount + fee
-        limit := fresh.BalanceKop + fresh.OverdraftLimitKop
-        if total > limit {
-                s.flash(w, "Недостаточно средств", false)
+        failed := func() {
+                http.Error(w, "Не удалось провести перевод", http.StatusInternalServerError)
+        }
+        tx, err := s.db.BeginTx(ctx, nil)
+        if err != nil {
+                failed()
+                return
+        }
+        defer tx.Rollback()
+
+        err = tx.QueryRowContext(ctx, `DELETE FROM transfer_drafts WHERE id=$1 AND user_id=$2
+                RETURNING recipient_id, amount_kop, fee_kop, memo, op_type`, draftID, u.ID).
+                Scan(&recipientID, &amount, &fee, &memo, &opType)
+        if err == sql.ErrNoRows {
                 http.Redirect(w, r, "/transfer/new", http.StatusFound)
                 return
         }
-        time.Sleep(80 * time.Millisecond)
-
-        _, _ = s.db.Exec(`UPDATE users SET balance_kop = balance_kop - $1 WHERE id=$2`, total, u.ID)
-        _, _ = s.db.Exec(`UPDATE users SET balance_kop = balance_kop + $1 WHERE id=$2`, amount, recipientID)
+        if err != nil {
+                failed()
+                return
+        }
+        if amount <= 0 || fee < 0 || fee > math.MaxInt64-amount {
+                http.Error(w, "Некорректная сумма", http.StatusBadRequest)
+                return
+        }
+        if v := r.FormValue("op_type"); v != "" {
+                opType = v
+        }
         kind := "transfer"
-        status := "ok"
         if opType == "tip_boss" {
                 kind = "tip_boss"
         }
-        var opID int
-        _ = s.db.QueryRow(`INSERT INTO operations (kind, from_user_id, to_user_id, amount_kop, fee_kop, memo, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-                kind, u.ID, recipientID, amount, fee, memo, status).Scan(&opID)
 
-        after, _ := s.getUserByID(u.ID)
-        if after.BalanceKop < 0 {
-                _, _ = s.db.Exec(`INSERT INTO anomaly_log (kind, detail) VALUES ('negative_balance', $1)`, fmt.Sprintf("user=%d op=%d", u.ID, opID))
+        // Lock accounts in the same order for transfers in either direction.
+        if _, err := tx.ExecContext(ctx, `SELECT id FROM users WHERE id IN ($1, $2) ORDER BY id FOR UPDATE`, u.ID, recipientID); err != nil {
+                failed()
+                return
+        }
+
+        var debitBalance int64
+        err = tx.QueryRowContext(ctx, `UPDATE users SET balance_kop=balance_kop-$1
+                WHERE id=$2 AND NOT blocked AND balance_kop::numeric + overdraft_limit_kop >= $1
+                RETURNING balance_kop`, amount+fee, u.ID).Scan(&debitBalance)
+        if err == sql.ErrNoRows {
+                s.flash(w, "Недостаточно средств или счёт заблокирован", false)
+                http.Redirect(w, r, "/transfer/new", http.StatusFound)
+                return
+        }
+        if err != nil {
+                failed()
+                return
+        }
+
+        var recipientBalance int64
+        err = tx.QueryRowContext(ctx, `UPDATE users SET balance_kop=balance_kop+$1
+                WHERE id=$2 AND NOT blocked RETURNING balance_kop`, amount, recipientID).Scan(&recipientBalance)
+        if err == sql.ErrNoRows {
+                s.flash(w, "Получатель недоступен", false)
+                http.Redirect(w, r, "/transfer/new", http.StatusFound)
+                return
+        }
+        if err != nil {
+                failed()
+                return
+        }
+
+        var opID int
+        err = tx.QueryRowContext(ctx, `INSERT INTO operations
+                (kind, from_user_id, to_user_id, amount_kop, fee_kop, memo, status)
+                VALUES ($1,$2,$3,$4,$5,$6,'ok') RETURNING id`,
+                kind, u.ID, recipientID, amount, fee, memo).Scan(&opID)
+        if err != nil {
+                failed()
+                return
+        }
+        if u.ID == recipientID {
+                debitBalance = recipientBalance
+        }
+        if debitBalance < 0 {
+                if _, err := tx.ExecContext(ctx, `INSERT INTO anomaly_log (kind, detail) VALUES ('negative_balance', $1)`, fmt.Sprintf("user=%d op=%d", u.ID, opID)); err != nil {
+                        failed()
+                        return
+                }
+        }
+        if err := tx.Commit(); err != nil {
+                failed()
+                return
         }
 
         var notifyURL string
@@ -259,7 +331,6 @@ func (s *Server) transferConfirm(w http.ResponseWriter, r *http.Request) {
                 s.doNotify(notifyURL)
         }
 
-        _, _ = s.db.Exec(`DELETE FROM transfer_drafts WHERE id=$1`, draftID)
         s.flash(w, "Перевод выполнен", true)
         http.Redirect(w, r, "/operations/"+strconv.Itoa(opID), http.StatusFound)
 }
