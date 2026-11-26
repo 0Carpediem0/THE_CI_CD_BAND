@@ -1,0 +1,20 @@
+# Hardened build for app/ (V-19, V-28)
+FROM golang:1.23-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+# воспроизводимая сборка, без go mod tidy в рантайме
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/wallet ./cmd/wallet
+
+# distroless: нет shell/apt/curl -> нечем раскручивать инъекцию команд
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+COPY --from=build /out/wallet /app/wallet
+COPY templates /app/templates
+COPY static /app/static
+# exports монтируется volume'ом с правами nonroot (uid 65532)
+USER 65532:65532
+ENV ADDR=:8080
+EXPOSE 8080
+ENTRYPOINT ["/app/wallet"]

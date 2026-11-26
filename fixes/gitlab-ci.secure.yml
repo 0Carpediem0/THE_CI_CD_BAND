@@ -1,0 +1,155 @@
+# Hardened CI: SAST + SCA + secret-scan + container-scan + DAST с блокировкой MR.
+# Политика: сканеры НЕ отключаем и критические алерты НЕ глушим (за это штраф по положению).
+# Триггеры безопасности обязательны на merge_request -> MR нельзя смёржить при падении.
+
+stages: [secrets, sast, sca, build, container_scan, dast, gate, deploy]
+
+variables:
+  GIT_STRATEGY: clone
+  TRIVY_EXIT_CODE_ON_FINDINGS: "1"
+
+# ---------- Secret scanning (V-01, V-26) ----------
+gitleaks:
+  stage: secrets
+  image: zricethezav/gitleaks:latest
+  script:
+    - gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif -v
+  artifacts:
+    when: always
+    paths: [gitleaks.sarif]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- SAST (V-03, V-04, V-05, V-06, V-13, V-14) ----------
+gosec:
+  stage: sast
+  image: securego/gosec:latest
+  script:
+    - gosec -fmt sarif -out gosec.sarif -severity medium ./app/... || true
+    - gosec -severity medium -confidence medium ./app/...   # ненулевой код -> падение джобы
+  artifacts:
+    when: always
+    paths: [gosec.sarif]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+semgrep:
+  stage: sast
+  image: semgrep/semgrep:latest
+  script:
+    - semgrep ci --config p/golang --config p/owasp-top-ten --error --sarif --output semgrep.sarif
+  artifacts:
+    when: always
+    paths: [semgrep.sarif]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- SCA: зависимости и Go stdlib (V-28) ----------
+govulncheck:
+  stage: sca
+  image: golang:1.23-bookworm
+  script:
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - cd app && $(go env GOPATH)/bin/govulncheck ./...
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+trivy_fs:
+  stage: sca
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL
+        --exit-code "$TRIVY_EXIT_CODE_ON_FINDINGS" --format sarif -o trivy-fs.sarif .
+  artifacts:
+    when: always
+    paths: [trivy-fs.sarif]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- Build (kaniko, как в оригинале) ----------
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script:
+    - |
+      set -eu
+      : "${NEXUS_REGISTRY:?missing}" "${NEXUS_USER:?missing}" "${NEXUS_PASSWORD:?missing}"
+      mkdir -p /kaniko/.docker
+      AUTH=$(printf '%s:%s' "$NEXUS_USER" "$NEXUS_PASSWORD" | base64 | tr -d '\n')
+      # НЕ печатаем AUTH/конфиг в лог (V-26)
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$NEXUS_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+      chmod 600 /kaniko/.docker/config.json
+    - /kaniko/executor --context "$CI_PROJECT_DIR/app" --dockerfile "$CI_PROJECT_DIR/app/Dockerfile" --destination "$NEXUS_REGISTRY/docker-hosted/office-wallet-app:$CI_COMMIT_SHA"
+    - /kaniko/executor --context "$CI_PROJECT_DIR/mock" --dockerfile "$CI_PROJECT_DIR/mock/Dockerfile" --destination "$NEXUS_REGISTRY/docker-hosted/office-wallet-mock:$CI_COMMIT_SHA"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- Container scan собранного образа (V-19) ----------
+trivy_image:
+  stage: container_scan
+  image: aquasec/trivy:latest
+  needs: [build]
+  script:
+    - trivy image --scanners vuln,secret --severity HIGH,CRITICAL
+        --exit-code "$TRIVY_EXIT_CODE_ON_FINDINGS" --ignore-unfixed
+        --format sarif -o trivy-image.sarif
+        "$NEXUS_REGISTRY/docker-hosted/office-wallet-app:$CI_COMMIT_SHA"
+  artifacts:
+    when: always
+    paths: [trivy-image.sarif]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- DAST: ZAP baseline против временного деплоя ----------
+zap_baseline:
+  stage: dast
+  image: ghcr.io/zaproxy/zaproxy:stable
+  needs: [deploy]
+  script:
+    - zap-baseline.py -t "https://$K8S_APP_DOMAIN" -r zap.html -J zap.json -I
+    # -I не роняет на WARN; критические правила падают (не глушим алерты)
+    - 'python3 -c "import json,sys; d=json.load(open(\"zap.json\")); h=sum(1 for s in d[\"site\"] for a in s[\"alerts\"] if int(a[\"riskcode\"])>=3); sys.exit(1 if h else 0)"'
+  artifacts:
+    when: always
+    paths: [zap.html, zap.json]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------- Gate: блокировка MR при Critical/High ----------
+security_gate:
+  stage: gate
+  image: alpine:3.20
+  needs: [gitleaks, gosec, semgrep, govulncheck, trivy_fs]
+  script:
+    - echo "Все security-джобы обязаны пройти. Падение любой блокирует merge."
+    - apk add --no-cache jq >/dev/null
+    - |
+      fail=0
+      for f in gitleaks.sarif gosec.sarif semgrep.sarif trivy-fs.sarif; do
+        [ -f "$f" ] || continue
+        n=$(jq '[.runs[].results[]?] | length' "$f" 2>/dev/null || echo 0)
+        echo "$f: findings=$n"
+        [ "$n" -gt 0 ] && fail=1
+      done
+      exit $fail
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# ---------- Deploy (как в оригинале, без печати секретов) ----------
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs: [build, trivy_image]
+  before_script:
+    - apk add --no-cache helm kubectl ca-certificates openssl
+  script:
+    - sh "$CI_PROJECT_DIR/ci/deploy.sh"   # вынести логику, секреты не echo'ить
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

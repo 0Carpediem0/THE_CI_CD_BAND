@@ -1,0 +1,71 @@
+# Hardened compose (V-01, V-18, V-21). Секреты — из .env/секрет-хранилища, не в репозитории.
+services:
+  app:
+    build: ./app
+    ports:
+      - "${WALLET_PORT:-18081}:8080"
+    environment:
+      # TLS к БД + пароль только из окружения/секрета
+      DATABASE_URL: "postgres://wallet:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/wallet?sslmode=verify-full&sslrootcert=/certs/ca.crt"
+      MAIL_HOST: mail
+      MAIL_PORT: "1025"
+      # сильные ключи обязательны; приложение падает на дефолтах (см. main.go патч)
+      SESSION_KEY: "${SESSION_KEY:?set SESSION_KEY}"
+      PAYMENT_KEY: "${PAYMENT_KEY:?set PAYMENT_KEY}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    volumes:
+      - wallet_exports:/app/exports
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wallet
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?set DB_PASSWORD}"
+    # Postgres со своим TLS; порт наружу не публикуется
+    command: >
+      postgres -c ssl=on
+      -c ssl_cert_file=/certs/server.crt
+      -c ssl_key_file=/certs/server.key
+    volumes:
+      - ./app/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./app/sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./certs:/certs:ro
+      - wallet_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  notify-mock:
+    build: ./mock
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  # Mailpit НЕ публикуем наружу (V-27): только во внутренней сети
+  mail:
+    image: axllent/mailpit:latest
+    expose:
+      - "8025"
+      - "1025"
+
+volumes:
+  wallet_db_data:
+  wallet_exports:

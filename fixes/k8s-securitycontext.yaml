@@ -1,0 +1,37 @@
+# Патч для charts/office-wallet/templates/app.yaml (и аналогично mock.yaml, mail.yaml) — V-27.
+# Вставить в spec.template.spec и в контейнер.
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: exports
+              mountPath: /app/exports
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# Mailpit (mail.yaml): mailIngress.enabled=false — не публиковать почтовый ящик наружу.
+# Если UI нужен — закрыть basic-auth/oauth2-proxy на ingress и ограничить source-range.
