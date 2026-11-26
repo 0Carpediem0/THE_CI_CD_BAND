@@ -35,6 +35,8 @@ func New(cfg Config) (*Server, error) {
         if err != nil {
                 return nil, err
         }
+        db.SetMaxOpenConns(20)
+        db.SetMaxIdleConns(10)
         var pingErr error
         for i := 0; i < 40; i++ {
                 pingErr = db.Ping()
@@ -45,11 +47,13 @@ func New(cfg Config) (*Server, error) {
                 time.Sleep(500 * time.Millisecond)
         }
         if pingErr != nil {
+                _ = db.Close()
                 return nil, pingErr
         }
         _ = os.MkdirAll(cfg.ExportsDir, 0o755)
         s := &Server{cfg: cfg, db: db}
         if err := s.loadTemplates(); err != nil {
+                _ = db.Close()
                 return nil, err
         }
         return s, nil
@@ -71,7 +75,15 @@ func (s *Server) ListenAndServe() error {
         mux := http.NewServeMux()
         mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.cfg.StaticDir))))
         mux.HandleFunc("/", s.route)
-        return http.ListenAndServe(s.cfg.Addr, mux)
+        server := &http.Server{
+                Addr:              s.cfg.Addr,
+                Handler:           mux,
+                ReadHeaderTimeout: 5 * time.Second,
+                ReadTimeout:       15 * time.Second,
+                WriteTimeout:      30 * time.Second,
+                IdleTimeout:       60 * time.Second,
+        }
+        return server.ListenAndServe()
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
