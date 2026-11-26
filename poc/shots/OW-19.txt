@@ -16,18 +16,18 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     → POST /login  login=ivanov (куки → Client)
     ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE login='petrova'
-    ← psql 932300
+    ← psql 967300
     → POST /cashier/topup  login=petrova amount_rub=-100 (минус 100₽)
     ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE login='petrova'
-    ← psql 922300
+    ← psql 957300
     → SQL SELECT kind||' '||amount_kop||' '||memo FROM operations ORDER BY id DESC LIMIT 1;
     ← psql topup -10000 Кассовое пополнение
     ┌─ АРТЕФАКТ · OW-19 · отрицательное кассовое пополнение
-    │ petrova balance_kop: 932300 → 922300
+    │ petrova balance_kop: 967300 → 957300
     │ последняя операция: kind|amount_kop|memo приведена в SQL-ответе выше
     └─
-[+] баланс petrova 932300 -> 922300 коп: отрицательное «пополнение» проведено, в операциях строка topup с минусом
+[+] баланс petrova 967300 -> 957300 коп: отрицательное «пополнение» проведено, в операциях строка topup с минусом
     → SQL UPDATE users SET role='admin' WHERE login='ivanov' RETURNING role;
     ← psql admin
     UPDATE 1

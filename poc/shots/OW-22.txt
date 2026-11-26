@@ -4,7 +4,7 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
 ################################################################################################
 == OW-22 · ошибка UPDATE не откатывает запись корректировки ==
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 922300
+    ← psql 957300
     → SQL UPDATE users SET balance_kop=9223372036854775807 WHERE login='petrova' RETURNING balance_kop;
     ← psql 9223372036854775807
     UPDATE 1
@@ -13,15 +13,15 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
     ← psql 9223372036854775807
     → SQL SELECT id||'|'||amount_kop||'|'||memo FROM operations WHERE kind='adjust' AND memo='OW-22 split write' ORDER BY id DESC LIMIT 1
-    ← psql 593|100|OW-22 split write
+    ← psql 656|100|OW-22 split write
     ┌─ АРТЕФАКТ · OW-22 · частичный результат без транзакции
     │ balance_kop перед: 9223372036854775807; UPDATE +100 коп упёрся в BIGINT max
     │ balance_kop после: 9223372036854775807 (не изменился)
-    │ INSERT operations выполнен отдельно: 593|100|OW-22 split write; HTTP 200
+    │ INSERT operations выполнен отдельно: 656|100|OW-22 split write; HTTP 200
     └─
 [+] ошибка первого SQL не помешала второму INSERT создать ложный журнал
     → SQL DELETE FROM operations WHERE kind='adjust' AND memo='OW-22 split write'
     ← psql DELETE 1
-    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
     ← psql UPDATE 1
     OW-22: баланс восстановлен; тестовая операция удалена

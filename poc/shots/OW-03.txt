@@ -4,34 +4,34 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
 ################################################################################################
 == OW-03 · гонка повторного использования quote при checkout ==
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194188900
+    ← psql 198936300
     → SQL DELETE FROM cart_items WHERE user_id=(SELECT id FROM users WHERE login='ivanov')
     ← psql DELETE 0
     → POST /cart/add product_id=3 for OW-03
     ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
-    → POST /checkout/quote item_comment=OW03-race-1795717403
+    → POST /checkout/quote item_comment=OW03-race-1795718677
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
-    → SQL SELECT total_kop FROM checkout_quotes WHERE id=153
+    → SQL SELECT total_kop FROM checkout_quotes WHERE id=164
     ← psql 27000
     → SQL UPDATE users SET balance_kop=GREATEST(balance_kop,27000) WHERE login='ivanov'
     ← psql UPDATE 1
-    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795717403'
+    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795718677'
     ← psql 0
-    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795717403'
-    ← psql 3
-    → SQL SELECT used FROM checkout_quotes WHERE id=153
+    → SQL SELECT count(*) FROM orders WHERE item_comment='OW03-race-1795718677'
+    ← psql 5
+    → SQL SELECT used FROM checkout_quotes WHERE id=164
     ← psql t
     ┌─ АРТЕФАКТ · OW-03 · гонка на одной checkout quote
-    │ quote #153 total_kop=27000 used_after=t; параллельных POST=12
-    │ orders с marker OW03-race-1795717403: 0 → 3
+    │ quote #164 total_kop=27000 used_after=t; параллельных POST=12
+    │ orders с marker OW03-race-1795718677: 0 → 5
     │ HTTP-коды: 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200
     └─
 [+] одна котировка создала несколько заказов
-    → SQL DELETE FROM orders WHERE item_comment='OW03-race-1795717403'
-    ← psql DELETE 3
-    → SQL DELETE FROM checkout_quotes WHERE id=153
+    → SQL DELETE FROM orders WHERE item_comment='OW03-race-1795718677'
+    ← psql DELETE 5
+    → SQL DELETE FROM checkout_quotes WHERE id=164
     ← psql DELETE 1
     → SQL DELETE FROM cart_items WHERE user_id=(SELECT id FROM users WHERE login='ivanov')
     ← psql DELETE 0
-    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
     ← psql UPDATE 1

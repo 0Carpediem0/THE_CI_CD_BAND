@@ -15,18 +15,18 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← HTTP 302 redirect=http://localhost:18081/password/forgot  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Сброс пароля · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.c...
     → GET /mail  (весь outbox виден иванову)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
-    → GET /gateway/sms  (код по заявке #43)
+    → GET /gateway/sms  (код по заявке #47)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
-    ссылка: /password/reset?rid=43   код: 673407
-    → POST /password/reset  rid=43&sms_code=673407&password=Hack1234
+    ссылка: /password/reset?rid=47   код: 096142
+    → POST /password/reset  rid=47&sms_code=096142&password=Hack1234
     ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
     → SQL SELECT password_hash FROM users WHERE login='adminw'
-    ← psql $2a$10$7RaARAmS4/VeSpErIzadquTgcFRSRRRpafp9dEjpKQ2dulhMCa5R2
+    ← psql $2a$10$.lyfs7erxzqTK/t2G8Ir6Ot6pq2AA7sYu15pXzskTrQ5MoPvuZVea
     → POST /login  login=adminw (куки → Client)
     ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     ┌─ АРТЕФАКТ · OW-26/OW-27 · сброс сменил пароль жертвы
-    │ reset request rid=43 sms_code=<получен из gateway> → HTTP 200
-    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$7RaARAmS4/V…
+    │ reset request rid=47 sms_code=<получен из gateway> → HTTP 200
+    │ password_hash изменён: $2a$10$.WcgUxFiEZL… → $2a$10$.lyfs7erxzq…
     │ POST /login новым паролем → HTTP 302 (сессия выдана)
     └─
 [+] пароль админа заменён, зашли: adminw / Hack1234
@@ -43,7 +43,7 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     · фильтра по адресату. Это вторая половина цепочки захвата пароля (stage_access).
     → GET /mail  (весь outbox)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Уведомления · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.co...
-    писем в outbox: 37 (включая строку шапки)
+    писем в outbox: 38 (включая строку шапки)
     тема: Сброс пароля
     тема: Сброс пароля
     тема: Сброс пароля
@@ -51,7 +51,7 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← psql ivanov@office.local
     ┌─ АРТЕФАКТ · OW-27 · сотрудник видит почту других адресатов
     │ GET /mail → HTTP 200; адрес текущего пользователя: ivanov@office.local
-    │ адреса в ответе: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local
+    │ адреса в ответе: adminw@office.local, adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local
     │ письма/ссылки из общего mail_outbox отображены в одном ответе
     └─
 [+] все письма видны без чужого адреса
@@ -64,6 +64,6 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← psql ivanov@office.local
     ┌─ АРТЕФАКТ · OW-27 · общий outbox показывает чужие письма
     │ GET /mail under ivanov <ivanov@office.local> → HTTP 200
-    │ чужие recipient в HTML: adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local, adminw@office.local
+    │ чужие recipient в HTML: adminw@office.local, adminw@office.local, adminw@office.local, sidorov@office.local, adminw@office.local, adminw@office.local
     └─
 [+] employee видит сообщения не своего почтового адреса

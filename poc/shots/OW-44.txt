@@ -4,31 +4,31 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
 ################################################################################################
 == OW-44 · op_type из POST переопределяет тип transfer_draft ==
     → POST /transfer/new recipient=petrova amount=1 memo=OW44
-    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=36  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
-    → SQL SELECT op_type FROM transfer_drafts WHERE id=36
+    ← HTTP 302 redirect=http://localhost:18081/transfer/confirm?draft_id=39  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение перевода · Office Wallet</title>   <link rel="preconnect" href="https://fonts.go...
+    → SQL SELECT op_type FROM transfer_drafts WHERE id=39
     ← psql transfer
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194188900
+    ← psql 198936300
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 922300
-    → POST /transfer/confirm draft_id=36 op_type=tip_boss
-    ← HTTP 302 redirect=http://localhost:18081/operations/594  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Операция · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ← psql 957300
+    → POST /transfer/confirm draft_id=39 op_type=tip_boss
+    ← HTTP 302 redirect=http://localhost:18081/operations/657  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Операция · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
     → SQL SELECT id||'|'||kind||'|'||amount_kop||'|'||memo FROM operations WHERE memo='OW-44' ORDER BY id DESC LIMIT 1
-    ← psql 594|tip_boss|100|OW-44
+    ← psql 657|tip_boss|100|OW-44
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194188800
+    ← psql 198936200
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 922400
+    ← psql 957400
     ┌─ АРТЕФАКТ · OW-44 · POST заменил вид операции
     │ transfer_drafts.op_type перед подтверждением: transfer
-    │ POST op_type=tip_boss → HTTP 200; operation row=594|tip_boss|100|OW-44
-    │ balances ivanov 194188900→194188800; petrova 922300→922400
+    │ POST op_type=tip_boss → HTTP 200; operation row=657|tip_boss|100|OW-44
+    │ balances ivanov 198936300→198936200; petrova 957300→957400
     └─
 [+] операция записана как tip_boss хотя draft был transfer
-    → SQL DELETE FROM operations WHERE id=594
+    → SQL DELETE FROM operations WHERE id=657
     ← psql DELETE 1
-    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
     ← psql UPDATE 1
-    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
     ← psql UPDATE 1
     OW-44: тестовая операция удалена, балансы восстановлены

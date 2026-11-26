@@ -59,7 +59,7 @@
 | OW-43 | Низкий / CWE-209 | Ошибки БД в ответах клиенту | `handlers_auth.go` → `login`; `handlers_money.go` → `history` / `tipsReceived` / `transferNew` | ☑ | ☑ | ☑ | ☑ | ☐ | FIXES.md; нейтральные 500 |
 | OW-44 | Средний / CWE-345 | Подмена `op_type` при подтверждении перевода | `handlers_money.go` → `transferConfirm`; `transfer_confirm.html` | ☑ | ☐ | ☑ | ☑ | ☐ | FIXES.md; `op_type` только из draft |
 
-[Дополнительные наблюдения и находки по зависимостям](docs/Уязвимости%20Office%20Wallet.md) · [План фиксов](docs/FIXES.md)
+[Дополнительные наблюдения и находки по зависимостям](docs/Уязвимости%20Office%20Wallet.md) · [План фиксов](docs/FIXES.md) · [Цепочки атак](docs/Цепочки.md)
 
 ## Состав
 

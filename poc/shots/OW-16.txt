@@ -4,26 +4,26 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
 ################################################################################################
 == OW-16 · конкурентные чаевые проходят одну и ту же проверку баланса ==
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194188900
+    ← psql 198936300
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 922300
-    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795717405'
+    ← psql 957300
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795718679'
     ← psql 0
-    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795717405'
+    → SQL SELECT count(*) FROM operations WHERE memo='OW-16 race 1795718679'
     ← psql 12
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
     ← psql -100
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 195111300
+    ← psql 199893700
     ┌─ АРТЕФАКТ · OW-16 · гонка проверки баланса чаевых
-    │ balance before=194188900; amount per request=970945 RUB; parallel POST=12
-    │ tip operations: 0 → 12; expected amount_kop each=97094500
-    │ ivanov: 194188900 → -100; petrova: 922300 → 195111300
+    │ balance before=198936300; amount per request=994682 RUB; parallel POST=12
+    │ tip operations: 0 → 12; expected amount_kop each=99468200
+    │ ivanov: 198936300 → -100; petrova: 957300 → 199893700
     └─
 [+] несколько чаевых прошли по одному старому балансу
-    → SQL DELETE FROM operations WHERE memo='OW-16 race 1795717405'
+    → SQL DELETE FROM operations WHERE memo='OW-16 race 1795718679'
     ← psql DELETE 12
-    → SQL UPDATE users SET balance_kop=194188900 WHERE login='ivanov'
+    → SQL UPDATE users SET balance_kop=198936300 WHERE login='ivanov'
     ← psql UPDATE 1
-    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
     ← psql UPDATE 1

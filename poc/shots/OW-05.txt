@@ -13,22 +13,22 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
     → POST /checkout/quote  item_comment=обычный заказ под возврат
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
-    → POST /checkout/confirm  quote_id=147
-    ← HTTP 302 redirect=http://localhost:18081/orders/202  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
-    → SQL SELECT total_kop FROM orders WHERE id=202
+    → POST /checkout/confirm  quote_id=158
+    ← HTTP 302 redirect=http://localhost:18081/orders/218  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT total_kop FROM orders WHERE id=218
     ← psql 45000
-    · заказ #202 оформлен (45000 коп), делаем возврат с qty=100:
+    · заказ #218 оформлен (45000 коп), делаем возврат с qty=100:
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 189895900
-    → POST /orders/202/return  qty=100 (refund = 45000 коп × 100)
-    ← HTTP 302 redirect=http://localhost:18081/orders/202  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ← psql 194643300
+    → POST /orders/218/return  qty=100 (refund = 45000 коп × 100)
+    ← HTTP 302 redirect=http://localhost:18081/orders/218  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194395900
-    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=202
-    ← psql 202|returned|45000
+    ← psql 199143300
+    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=218
+    ← psql 218|returned|45000
     ┌─ АРТЕФАКТ · OW-05 · завышенный возврат
-    │ balance_kop ivanov: 189895900 → 194395900 (дельта +4500000 коп = цена заказа × 100)
-    │ заказ после возврата: 202|returned|45000
+    │ balance_kop ivanov: 194643300 → 199143300 (дельта +4500000 коп = цена заказа × 100)
+    │ заказ после возврата: 218|returned|45000
     └─
 [+] qty=100 начислил в 100 раз больше цены заказа
     → SQL DELETE FROM cart_items WHERE user_id=1
@@ -37,22 +37,22 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     ← HTTP 302 redirect=http://localhost:18081/cart  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Корзина · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
     → POST /checkout/quote  item_comment=второй заказ под отрицательный возврат
     ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Подтверждение оплаты · Office Wallet</title>   <link rel="preconnect" href="https://fonts.goog...
-    → POST /checkout/confirm  quote_id=148
-    ← HTTP 302 redirect=http://localhost:18081/orders/203  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
-    → SQL SELECT total_kop FROM orders WHERE id=203
+    → POST /checkout/confirm  quote_id=159
+    ← HTTP 302 redirect=http://localhost:18081/orders/219  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → SQL SELECT total_kop FROM orders WHERE id=219
     ← psql 45000
-    · заказ #203 оформлен (45000 коп), теперь qty=-1 — деньги уходят со счёта:
+    · заказ #219 оформлен (45000 коп), теперь qty=-1 — деньги уходят со счёта:
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194350900
-    → POST /orders/203/return  qty=-1 (refund = -45000 коп)
-    ← HTTP 302 redirect=http://localhost:18081/orders/203  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ← psql 199098300
+    → POST /orders/219/return  qty=-1 (refund = -45000 коп)
+    ← HTTP 302 redirect=http://localhost:18081/orders/219  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE login='ivanov';
-    ← psql 194305900
-    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=203
-    ← psql 203|returned|45000
+    ← psql 199053300
+    → SQL SELECT id||'|'||status||'|'||total_kop FROM orders WHERE id=219
+    ← psql 219|returned|45000
     ┌─ АРТЕФАКТ · OW-05 · отрицательное количество возврата
-    │ balance_kop ivanov: 194350900 → 194305900 (дельта -45000 коп)
-    │ заказ после возврата: 203|returned|45000
+    │ balance_kop ivanov: 199098300 → 199053300 (дельта -45000 коп)
+    │ заказ после возврата: 219|returned|45000
     └─
 [+] qty=-1 списал цену заказа, но обработан как возврат
     → SQL DELETE FROM cart_items WHERE user_id=1

@@ -6,30 +6,30 @@ OFFICE WALLET · АРТЕФАКТ ПО РЕЕСТРУ
     → SQL SELECT id FROM users WHERE login='petrova'
     ← psql 2
     → SQL INSERT INTO orders (user_id,status,total_kop,lines_json,item_comment) VALUES (2,'received',12345,'[]','OW-20 test') RETURNING id
-    ← psql 209
+    ← psql 225
     INSERT 0 1
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 922300
-    → POST /cashier/fulfill/209 со статусом received
-    ← HTTP 302 redirect=http://localhost:18081/orders/209  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ← psql 957300
+    → POST /cashier/fulfill/225 со статусом received
+    ← HTTP 302 redirect=http://localhost:18081/orders/225  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Заказ · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
     → SQL SELECT balance_kop FROM users WHERE login='petrova';
-    ← psql 934645
-    → SQL SELECT id||' '||status FROM orders WHERE id=209;
-    ← psql 209 fulfilled_refund
-    → SQL SELECT count(*) FROM operations WHERE kind='refund' AND memo='Корректировка выдачи #209'
+    ← psql 969645
+    → SQL SELECT id||' '||status FROM orders WHERE id=225;
+    ← psql 225 fulfilled_refund
+    → SQL SELECT count(*) FROM operations WHERE kind='refund' AND memo='Корректировка выдачи #225'
     ← psql 1
     ┌─ АРТЕФАКТ · OW-20 · повторное зачисление на выдаче
-    │ заказ #209 received → fulfilled_refund; POST вернул HTTP 200
-    │ petrova balance_kop: 922300 → 934645 (+12345)
+    │ заказ #225 received → fulfilled_refund; POST вернул HTTP 200
+    │ petrova balance_kop: 957300 → 969645 (+12345)
     │ операция refund создана: count=1
     └─
 [+] cashierFulfill начислил деньги заказу, который уже received
-    → SQL DELETE FROM operations WHERE memo='Корректировка выдачи #209'
+    → SQL DELETE FROM operations WHERE memo='Корректировка выдачи #225'
     ← psql DELETE 1
-    → SQL DELETE FROM anomaly_log WHERE detail LIKE 'order=209 %'
+    → SQL DELETE FROM anomaly_log WHERE detail LIKE 'order=225 %'
     ← psql DELETE 1
-    → SQL DELETE FROM orders WHERE id=209
+    → SQL DELETE FROM orders WHERE id=225
     ← psql DELETE 1
-    → SQL UPDATE users SET balance_kop=922300 WHERE login='petrova'
+    → SQL UPDATE users SET balance_kop=957300 WHERE login='petrova'
     ← psql UPDATE 1
     OW-20: тестовый заказ/операция удалены, баланс восстановлен

@@ -17,6 +17,8 @@ python3 poc/04_unlimited_db_pool.py http://localhost:18081 150 45
 ```
 
 Пошаговая расшифровка каждого пункта (что нажимать и в каком порядке) — в `poc/STEPS.md`.
+Комбинации нескольких уязвимостей в один сценарий — в [`docs/Цепочки.md`](docs/Цепочки.md);
+карточки всех проверок — в `poc/shots/` (генерируются `python3 poc/test_registry.py`).
 Отдельные этапы: `poc/stage_access.py` (доступы), `poc/stage_money.py` (деньги),
 `poc/stage_data.py` (данные), `poc/stage_xss.py` (обходы санитайзера и кража сессии).
 

