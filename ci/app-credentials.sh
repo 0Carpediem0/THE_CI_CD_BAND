@@ -38,7 +38,6 @@ new_password() {
   openssl rand -hex 24
 }
 
-echo "=== Application credentials (development only; GitLab job log is visible to authorized users) ==="
 if [ -z "${DB_PASSWORD:-}" ]; then
   DB_PASSWORD=$(get_existing 'POSTGRES_PASSWORD')
 fi
@@ -46,7 +45,6 @@ if [ -z "${DB_PASSWORD:-}" ]; then
   DB_PASSWORD=$(new_password)
 fi
 export DB_PASSWORD
-printf "%s=%s\n" "DB_PASSWORD" "$DB_PASSWORD"
 
 if [ -z "${APP_SESSION_KEY:-}" ]; then
   APP_SESSION_KEY=$(get_existing 'SESSION_KEY')
@@ -55,7 +53,6 @@ if [ -z "${APP_SESSION_KEY:-}" ]; then
   APP_SESSION_KEY=$(new_password)
 fi
 export APP_SESSION_KEY
-printf "%s=%s\n" "APP_SESSION_KEY" "$APP_SESSION_KEY"
 
 if [ -z "${APP_PAYMENT_KEY:-}" ]; then
   APP_PAYMENT_KEY=$(get_existing 'PAYMENT_KEY')
@@ -64,6 +61,4 @@ if [ -z "${APP_PAYMENT_KEY:-}" ]; then
   APP_PAYMENT_KEY=$(new_password)
 fi
 export APP_PAYMENT_KEY
-printf "%s=%s\n" "APP_PAYMENT_KEY" "$APP_PAYMENT_KEY"
 
-echo "=== End of application credentials ==="
