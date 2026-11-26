@@ -1,0 +1,16 @@
+.env
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.tmp
+_*.sh
+_*.cmd
+_*.txt
+_*.html
+_*.bin
+_*.ck
+charts/*/charts/
+charts/*/tmpcharts/
+*.tgz

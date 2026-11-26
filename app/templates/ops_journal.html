@@ -1,0 +1,9 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  <section class="panel">
+    <h1>Журнал операций</h1>
+    <pre class="receipt-preview">{{index .Data "Journal"}}</pre>
+  </section>
+</main>
+{{template "foot" .}}

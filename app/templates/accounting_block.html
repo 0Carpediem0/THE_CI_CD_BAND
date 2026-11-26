@@ -1,0 +1,33 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Блокировки счетов</h1>
+    <table class="table">
+      <thead><tr><th>Логин</th><th>Имя</th><th>Статус</th><th></th></tr></thead>
+      <tbody>
+      {{range .Data.Users}}
+        <tr>
+          <td>{{.Login}}</td>
+          <td>{{.Name}}</td>
+          <td>{{if .Blocked}}заблокирован{{else}}активен{{end}}</td>
+          <td>
+            <form method="post" action="/accounting/block" style="display:inline">
+              <input type="hidden" name="login" value="{{.Login}}">
+              {{if .Blocked}}
+                <input type="hidden" name="blocked" value="0">
+                <button class="btn ghost" type="submit" style="padding:8px 12px">Разблок</button>
+              {{else}}
+                <input type="hidden" name="blocked" value="1">
+                <button class="btn secondary" type="submit" style="padding:8px 12px">Блок</button>
+              {{end}}
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

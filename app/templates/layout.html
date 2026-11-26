@@ -1,0 +1,64 @@
+{{define "head"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · Office Wallet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/wallet.css">
+  <script src="/static/wallet.js" defer></script>
+  <script src="/static/pay.js" defer></script>
+  <script src="/static/legacy-sync.js" defer></script>
+</head>
+<body data-k="session">
+<div class="aurora" aria-hidden="true"></div>
+{{end}}
+
+{{define "top"}}
+<header class="top">
+  <a class="logo" href="/">
+    <span class="logo-mark" aria-hidden="true"></span>
+    <span class="logo-text">Office Wallet</span>
+  </a>
+  {{if .User}}
+  <nav class="nav">
+    <a href="/">Обзор</a>
+    <a href="/history">История</a>
+    <a href="/transfer/new">Перевод</a>
+    <a href="/tips/new">Чаевые</a>
+    <a href="/tips/received">Входящие</a>
+    <a href="/shop">Магазин</a>
+    <a href="/cart">Корзина</a>
+    {{if .User.IsCashier}}<a href="/cashier/topup">Касса</a>{{end}}
+    {{if .User.IsAccountant}}<a href="/accounting/reconcile">Сверка</a><a href="/accounting/adjust">Корректировка</a><a href="/accounting/block">Блокировки</a>{{end}}
+    {{if .User.IsAdmin}}<a href="/admin/secrets">Служебное</a><a href="/gateway/sms">SMS-шлюз</a>{{end}}
+    <a href="/profile">Профиль</a>
+    <a href="/mail">Почта</a>
+    <a href="/ops/journal">Журнал</a>
+    <a href="/logout" class="nav-mute">Выход</a>
+  </nav>
+  <div class="who">
+    <div class="who-name">{{.User.DisplayName}}</div>
+    <div class="who-meta">{{.User.RoleLabel}} · {{.User.BalanceRub}}</div>
+  </div>
+  {{end}}
+</header>
+{{end}}
+
+{{define "flash"}}
+{{if .Flash}}
+<div class="flash {{if .FlashOK}}ok{{else}}bad{{end}}">{{.Flash}}</div>
+{{end}}
+{{end}}
+
+{{define "foot"}}
+<footer class="foot">
+  <span>Office Wallet · внутренний контур</span>
+  {{if .MailUI}}<a href="{{.MailUI}}" target="_blank" rel="noopener">Почтовый ящик</a>{{end}}
+</footer>
+</body>
+</html>
+{{end}}

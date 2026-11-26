@@ -1,0 +1,45 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>История</h1>
+    <p class="muted">Результаты по запросу: <span>{{.QRaw}}</span></p>
+    <form method="get" action="/history" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <label>Поиск</label>
+        <input name="q" value="{{index .Data "Q"}}" placeholder="комментарий или тип">
+      </div>
+      <button class="btn" type="submit">Найти</button>
+    </form>
+  </section>
+  <section class="panel">
+    <table class="table">
+      <thead><tr><th>ID</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Комментарий</th><th></th></tr></thead>
+      <tbody>
+      {{range .Data.Ops}}
+        <tr>
+          <td><a href="/operations/{{.ID}}">#{{.ID}}</a></td>
+          <td>{{.Kind}}</td>
+          <td>{{.Amount}}</td>
+          <td>{{.Status}}</td>
+          <td>{{.Memo}}</td>
+          <td>
+            <form method="post" action="/pay/replay" style="display:flex;gap:6px;flex-wrap:wrap">
+              <input type="hidden" name="op_id" value="{{.ID}}">
+              <input type="hidden" name="amount_kop" value="{{.AmountKop}}">
+              <input type="hidden" name="recipient" value="{{.ToID}}">
+              <input type="hidden" name="sig" value="{{.ReplaySig}}">
+              <input name="to_login" placeholder="логин" style="margin:0;min-width:90px;padding:8px 10px">
+              <button class="btn ghost" type="submit" style="padding:8px 12px">Повтор</button>
+            </form>
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="6" class="muted">Ничего не найдено</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

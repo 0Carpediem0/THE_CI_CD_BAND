@@ -1,0 +1,30 @@
+Office Wallet is installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Build images before install (tag must match values):
+  ./scripts/build-images.sh
+  ./scripts/build-images.ps1 -LoadKind
+
+{{- if .Values.ingress.enabled }}
+App:
+{{- range .Values.ingress.hosts }}
+  http://{{ .host }}
+{{- end }}
+{{- else }}
+Port-forward app:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "office-wallet.fullname" . }}-app 18081:8080
+{{- end }}
+{{- if .Values.mail.enabled }}
+{{- if .Values.mailIngress.enabled }}
+Mailpit (separate service):
+{{- range .Values.mailIngress.hosts }}
+  http://{{ .host }}
+{{- end }}
+{{- else }}
+Port-forward mail (separate service):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "office-wallet.fullname" . }}-mail 18025:8025
+{{- end }}
+{{- else }}
+Mailpit chart component disabled (mail.enabled=false). Configure external SMTP via app.mailHost / app.mailUi.
+{{- end }}
+
+Practice account: ivanov / workplace1

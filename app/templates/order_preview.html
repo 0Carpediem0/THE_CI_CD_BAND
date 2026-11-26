@@ -1,0 +1,10 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  <section class="panel">
+    <h1>Превью чека #{{index .Data "ID"}}</h1>
+    {{.Preview}}
+    <div class="actions"><a class="btn secondary" href="/orders/{{index .Data "ID"}}">К заказу</a></div>
+  </section>
+</main>
+{{template "foot" .}}

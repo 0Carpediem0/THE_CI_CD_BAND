@@ -1,0 +1,20 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Подтверждение оплаты</h1>
+    <p>Котировка #{{index .Data "QuoteID"}} · к оплате <strong>{{index .Data "Sum"}}</strong></p>
+    {{if index .Data "Promo"}}<p class="muted">Промокод: {{index .Data "Promo"}}</p>{{end}}
+    <p class="muted">Можно вернуться в магазин и изменить корзину до подтверждения.</p>
+    <div class="actions">
+      <a class="btn ghost" href="/shop">В магазин</a>
+      <a class="btn secondary" href="/cart">Корзина</a>
+      <form method="post" action="/checkout/confirm" style="display:inline">
+        <input type="hidden" name="quote_id" value="{{index .Data "QuoteID"}}">
+        <button class="btn" type="submit">Подтвердить оплату</button>
+      </form>
+    </div>
+  </section>
+</main>
+{{template "foot" .}}

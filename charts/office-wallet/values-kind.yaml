@@ -1,0 +1,35 @@
+# Example overrides for local kind / minikube
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: office-wallet.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+mail:
+  enabled: true
+
+mailIngress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: office-wallet-mail.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+app:
+  publicBase: "http://office-wallet.local"
+  mailUi: "http://office-wallet-mail.local"
+
+image:
+  app:
+    repository: office-wallet-app
+    tag: "1.0.0"
+    pullPolicy: Never
+  mock:
+    repository: office-wallet-mock
+    tag: "1.0.0"
+    pullPolicy: Never

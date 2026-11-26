@@ -1,0 +1,19 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Чаевые</h1>
+    <p class="muted">В интерфейсе действует мягкий лимит 50 ₽.</p>
+    <form method="post" action="/tips/new" enctype="multipart/form-data" data-tip-form>
+      <label>Получатель</label>
+      <input name="recipient" required>
+      <label>Сумма, ₽</label>
+      <input name="amount_rub" required>
+      <label>Комментарий</label>
+      <input name="comment">
+      <button class="btn" type="submit">Отправить</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}

@@ -1,0 +1,60 @@
+{{- if .Values.mail.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-mail
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "office-wallet.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mail
+  template:
+    metadata:
+      labels:
+        {{- include "office-wallet.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mail
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mailpit
+          image: {{ .Values.image.mailpit | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8025
+              name: ui
+            - containerPort: 1025
+              name: smtp
+          resources:
+            {{- toYaml .Values.resources.mail | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-mail
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mail
+spec:
+  type: {{ .Values.service.mail.type }}
+  ports:
+    - port: {{ .Values.service.mail.uiPort }}
+      targetPort: ui
+      name: ui
+    - port: {{ .Values.service.mail.smtpPort }}
+      targetPort: smtp
+      name: smtp
+  selector:
+    {{- include "office-wallet.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mail
+{{- end }}

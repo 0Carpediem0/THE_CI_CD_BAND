@@ -1,0 +1,36 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="hero" style="margin-bottom:22px">
+    <div>
+      <h1>Магазин офиса</h1>
+      <p>Карточки товаров в одном цифровом бумажнике — кофе, чай и сувениры для команды.</p>
+      <div class="actions">
+        <a class="btn secondary" href="/cart">Корзина</a>
+        <a class="btn ghost" href="/api/catalog" target="_blank">JSON каталога</a>
+      </div>
+    </div>
+    <div class="card-stack" style="height:200px">
+      <div class="pass pass-a" style="height:140px"><div class="label">Shop</div><div class="value">Pass</div></div>
+      <div class="pass pass-b" style="height:140px"><div class="label">Coffee</div><div class="value">450 ₽</div></div>
+      <div class="pass pass-c" style="height:140px"><div class="label">Mug</div><div class="value">600 ₽</div></div>
+    </div>
+  </section>
+  <div class="product-grid">
+    {{range .Data.Items}}
+    <article class="product">
+      <div>
+        <div class="muted mono">{{.Code}}</div>
+        <h3>{{.Title}}</h3>
+        <div class="price">{{.Price}}</div>
+      </div>
+      <form method="post" action="/cart/add">
+        <input type="hidden" name="product_id" value="{{.ID}}">
+        <button class="btn" type="submit" style="width:100%;justify-content:center">В корзину</button>
+      </form>
+    </article>
+    {{end}}
+  </div>
+</main>
+{{template "foot" .}}

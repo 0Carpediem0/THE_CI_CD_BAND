@@ -1,0 +1,19 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Чаевые #{{index .Data "ID"}}</h1>
+    <div class="stat-row">
+      <div class="stat"><div class="k">Сумма</div><div class="v">{{index .Data "Amount"}}</div></div>
+      <div class="stat"><div class="k">Статус</div><div class="v">{{index .Data "Status"}}</div></div>
+    </div>
+    <p class="muted">{{index .Data "Created"}}</p>
+    <div class="panel" style="background:#12141c;margin-top:12px">
+      <div class="muted" style="margin-bottom:8px">Сообщение</div>
+      <div class="tip-body">{{.TipHTML}}</div>
+    </div>
+    <div class="actions"><a class="btn secondary" href="/tips/received">К списку</a></div>
+  </section>
+</main>
+{{template "foot" .}}

@@ -1,0 +1,28 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Исходящая почта</h1>
+    <form method="post" action="/mail" style="margin-bottom:14px">
+      <button class="btn secondary" type="submit">Отправить тест себе</button>
+      {{if .MailUI}}<a class="btn ghost" href="{{.MailUI}}" target="_blank" rel="noopener">Открыть Mailpit</a>{{end}}
+    </form>
+    <table class="table">
+      <thead><tr><th>Кому</th><th>Тема</th><th>Текст</th><th>Когда</th></tr></thead>
+      <tbody>
+      {{range .Data.Messages}}
+        <tr>
+          <td>{{.To}}</td>
+          <td>{{.Subject}}</td>
+          <td class="mono">{{.Body}}</td>
+          <td class="muted">{{.Created}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Пусто</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

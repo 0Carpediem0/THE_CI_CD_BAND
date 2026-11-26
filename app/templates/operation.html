@@ -1,0 +1,19 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Операция #{{index .Data "ID"}}</h1>
+    <div class="stat-row">
+      <div class="stat"><div class="k">Тип</div><div class="v">{{index .Data "Kind"}}</div></div>
+      <div class="stat"><div class="k">Сумма</div><div class="v">{{index .Data "Amount"}}</div></div>
+      <div class="stat"><div class="k">Комиссия</div><div class="v">{{index .Data "Fee"}}</div></div>
+    </div>
+    <p><span class="muted">Статус:</span> {{index .Data "Status"}}</p>
+    <p><span class="muted">От:</span> {{index .Data "FromID"}} · <span class="muted">Кому:</span> {{index .Data "ToID"}}</p>
+    <p><span class="muted">Комментарий:</span> {{index .Data "Memo"}}</p>
+    <p class="muted mono">{{index .Data "Created"}}</p>
+    <div class="actions"><a class="btn secondary" href="/history">К истории</a></div>
+  </section>
+</main>
+{{template "foot" .}}

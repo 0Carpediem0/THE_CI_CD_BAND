@@ -1,0 +1,16 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Кассовое пополнение</h1>
+    <form method="post" action="/cashier/topup">
+      <label>Логин клиента</label>
+      <input name="login" value="{{.User.Login}}">
+      <label>Сумма, ₽</label>
+      <input name="amount_rub" required>
+      <button class="btn" type="submit">Пополнить</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}

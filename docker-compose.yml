@@ -1,0 +1,51 @@
+services:
+  app:
+    build: ./app
+    ports:
+      - "${WALLET_PORT:-18081}:8080"
+    environment:
+      DATABASE_URL: postgres://wallet:wallet@db:5432/wallet?sslmode=disable
+      MAIL_HOST: mail
+      MAIL_PORT: "1025"
+      MAIL_UI: "http://localhost:${MAIL_PORT_UI:-18025}"
+      INTERNAL_NOTIFY_HOST: notify-mock
+      SESSION_KEY: office-wallet-session-key
+      PAYMENT_KEY: office-wallet-pay-key
+      PUBLIC_BASE: "http://localhost:${WALLET_PORT:-18081}"
+    volumes:
+      - wallet_exports:/app/exports
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_started
+      notify-mock:
+        condition: service_started
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wallet
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet
+    volumes:
+      - ./app/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./app/sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - wallet_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  notify-mock:
+    build: ./mock
+
+  mail:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAIL_PORT_UI:-18025}:8025"
+
+volumes:
+  wallet_db_data:
+  wallet_exports:

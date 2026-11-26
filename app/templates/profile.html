@@ -1,0 +1,21 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Профиль</h1>
+    <form method="post" action="/profile">
+      <label>Отображаемое имя</label>
+      <input name="display_name" value="{{.User.DisplayName}}">
+      <label>Email</label>
+      <input name="email" value="{{.User.Email}}">
+      <p class="muted mono">Счёт: {{.User.AccountNo}}</p>
+      <button class="btn" type="submit">Сохранить</button>
+    </form>
+    <div class="actions" style="margin-top:12px">
+      <a class="btn ghost" href="/settings/notify">URL уведомлений</a>
+      <a class="btn ghost" href="/statements/export">Выписка</a>
+    </div>
+  </section>
+</main>
+{{template "foot" .}}

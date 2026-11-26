@@ -1,0 +1,6 @@
+*.md
+.git
+.gitignore
+.DS_Store
+*.tgz
+tmpcharts/

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-app
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "office-wallet.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "office-wallet.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: app
+          image: "{{ .Values.image.app.repository }}:{{ .Values.image.app.tag }}"
+          imagePullPolicy: {{ .Values.image.app.pullPolicy }}
+          env:
+            - name: ADDR
+              value: ":8080"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "office-wallet.fullname" . }}-db
+                  key: DATABASE_URL
+            - name: MAIL_HOST
+              value: {{ include "office-wallet.mailHost" . | quote }}
+            - name: MAIL_PORT
+              value: {{ .Values.app.mailPort | quote }}
+            - name: MAIL_UI
+              value: {{ .Values.app.mailUi | quote }}
+            - name: INTERNAL_NOTIFY_HOST
+              value: {{ include "office-wallet.mockHost" . | quote }}
+            - name: SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "office-wallet.fullname" . }}-db
+                  key: SESSION_KEY
+            - name: PAYMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "office-wallet.fullname" . }}-db
+                  key: PAYMENT_KEY
+            - name: PUBLIC_BASE
+              value: {{ .Values.app.publicBase | quote }}
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: exports
+              mountPath: /app/exports
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.app | nindent 12 }}
+      volumes:
+        - name: exports
+          {{- if .Values.app.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "office-wallet.fullname" . }}-exports
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-app
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  type: {{ .Values.service.app.type }}
+  ports:
+    - port: {{ .Values.service.app.port }}
+      targetPort: http
+      name: http
+  selector:
+    {{- include "office-wallet.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: app

@@ -1,0 +1,24 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Корзина</h1>
+    <table class="table">
+      <thead><tr><th>Товар</th><th>Цена</th><th>Кол-во</th><th>Сумма</th></tr></thead>
+      <tbody>
+      {{range .Data.Items}}
+        <tr><td>{{.Title}}</td><td>{{.Price}}</td><td>{{.Qty}}</td><td>{{.Line}}</td></tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Пусто</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p>Итого: <strong>{{index .Data "Sum"}}</strong></p>
+    <div class="actions">
+      <a class="btn" href="/checkout">Оформить</a>
+      <a class="btn secondary" href="/shop">К магазину</a>
+    </div>
+  </section>
+</main>
+{{template "foot" .}}

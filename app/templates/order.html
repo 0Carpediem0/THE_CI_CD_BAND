@@ -1,0 +1,27 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Заказ #{{index .Data "ID"}}</h1>
+    <div class="stat-row">
+      <div class="stat"><div class="k">Статус</div><div class="v">{{index .Data "Status"}}</div></div>
+      <div class="stat"><div class="k">Сумма</div><div class="v">{{index .Data "Total"}}</div></div>
+      <div class="stat"><div class="k">Комментарий</div><div class="v" style="font-size:1rem">{{index .Data "Comment"}}</div></div>
+    </div>
+    <pre class="mono muted" style="white-space:pre-wrap">{{index .Data "Lines"}}</pre>
+    <div class="actions">
+      {{if index .Data "Owner"}}
+        <a class="btn secondary" href="/orders/{{index .Data "ID"}}/cancel">Отмена</a>
+        <a class="btn secondary" href="/orders/{{index .Data "ID"}}/return">Возврат</a>
+        <a class="btn ghost" href="/orders/{{index .Data "ID"}}/received">Получил</a>
+        <a class="btn ghost" href="/orders/{{index .Data "ID"}}/preview">Превью чека</a>
+      {{end}}
+      {{if index .Data "Cashier"}}
+        <a class="btn" href="/cashier/fulfill/{{index .Data "ID"}}">Выдача кассира</a>
+      {{end}}
+      <a class="btn secondary" href="/shop">В магазин</a>
+    </div>
+  </section>
+</main>
+{{template "foot" .}}

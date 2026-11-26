@@ -1,0 +1,60 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="hero">
+    <div>
+      <h1>Ваш офисный кошелёк всегда под рукой</h1>
+      <p>Переводы коллегам, чаевые, заказы из магазина и выписки — в одном тёмном контуре в духе цифрового бумажника.</p>
+      <div class="actions">
+        <a class="btn" href="/transfer/new">Перевести</a>
+        <a class="btn secondary" href="/shop">Открыть магазин</a>
+        <a class="btn ghost" href="/history">История</a>
+      </div>
+    </div>
+    <div class="card-stack" aria-hidden="true">
+      <div class="pass pass-a">
+        <div class="label">Баланс</div>
+        <div class="value">{{if .User}}{{.User.BalanceRub}}{{end}}</div>
+        <div class="meta"><span>{{if .User}}{{.User.DisplayName}}{{end}}</span><span>OW</span></div>
+      </div>
+      <div class="pass pass-b">
+        <div class="label">Счёт</div>
+        <div class="value" style="font-size:1.05rem">{{if .User}}{{.User.AccountNo}}{{end}}</div>
+        <div class="meta"><span>Office</span><span>Pass</span></div>
+      </div>
+      <div class="pass pass-c">
+        <div class="label">Роль</div>
+        <div class="value" style="font-size:1.35rem">{{if .User}}{{.User.RoleLabel}}{{end}}</div>
+        <div class="meta"><span>Active</span><span>Card</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="stat-row">
+    <div class="stat"><div class="k">Доступно</div><div class="v">{{if .User}}{{.User.BalanceRub}}{{end}}</div></div>
+    <div class="stat"><div class="k">Овердрафт</div><div class="v">{{if .User}}{{rub .User.OverdraftLimitKop}}{{end}}</div></div>
+    <div class="stat"><div class="k">Логин</div><div class="v">{{if .User}}{{.User.Login}}{{end}}</div></div>
+  </div>
+
+  <section class="panel">
+    <h2>Недавние операции</h2>
+    <table class="table">
+      <thead><tr><th>ID</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Комментарий</th></tr></thead>
+      <tbody>
+      {{range .Data.Ops}}
+        <tr>
+          <td><a href="/operations/{{.ID}}">#{{.ID}}</a></td>
+          <td>{{.Kind}}</td>
+          <td>{{.Amount}}</td>
+          <td>{{.Status}}</td>
+          <td class="muted">{{.Memo}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="muted">Пока пусто</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

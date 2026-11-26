@@ -1,0 +1,71 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-app
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range (.paths | default (list (dict "path" "/" "pathType" "Prefix"))) }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "office-wallet.fullname" $ }}-app
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}
+---
+{{- if and .Values.mail.enabled .Values.mailIngress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "office-wallet.fullname" . }}-mail
+  labels:
+    {{- include "office-wallet.labels" . | nindent 4 }}
+  {{- with .Values.mailIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.mailIngress.className }}
+  ingressClassName: {{ .Values.mailIngress.className }}
+  {{- end }}
+  {{- if .Values.mailIngress.tls }}
+  tls:
+    {{- toYaml .Values.mailIngress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.mailIngress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range (.paths | default (list (dict "path" "/" "pathType" "Prefix"))) }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "office-wallet.fullname" $ }}-mail
+                port:
+                  name: ui
+          {{- end }}
+    {{- end }}
+{{- end }}

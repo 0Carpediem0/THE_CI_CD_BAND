@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  <section class="panel">
+    <h1>Возврат заказа #{{index .Data "ID"}}</h1>
+    <p class="muted">Текущий статус: {{index .Data "Status"}}</p>
+    <form method="post" action="/orders/{{index .Data "ID"}}/return">
+      <label>Количество</label>
+      <input name="qty" value="1">
+      <button class="btn" type="submit">Оформить возврат</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}

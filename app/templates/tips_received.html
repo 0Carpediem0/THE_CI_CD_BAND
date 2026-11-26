@@ -1,0 +1,26 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Входящие чаевые</h1>
+    <p class="muted">Краткий список. Полный текст комментария — в карточке сообщения.</p>
+    <table class="table">
+      <thead><tr><th>ID</th><th>Сумма</th><th>Статус</th><th>Превью</th><th></th></tr></thead>
+      <tbody>
+      {{range .Data.Tips}}
+        <tr>
+          <td>#{{.ID}}</td>
+          <td>{{.Amount}}</td>
+          <td>{{.Status}}</td>
+          <td class="muted">{{.Preview}}</td>
+          <td><a class="btn ghost" href="/tips/received?id={{.ID}}" style="padding:6px 10px">Открыть</a></td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="muted">Пока нет входящих чаевых.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

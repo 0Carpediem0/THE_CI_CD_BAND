@@ -1,0 +1,18 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Ручная корректировка</h1>
+    <form method="post" action="/accounting/adjust">
+      <label>Логин</label>
+      <input name="login" required>
+      <label>Дельта, ₽ (может быть отрицательной)</label>
+      <input name="delta_rub" required>
+      <label>Основание</label>
+      <input name="reason">
+      <button class="btn" type="submit">Применить</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}

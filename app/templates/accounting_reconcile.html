@@ -1,0 +1,31 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Сверка операций</h1>
+    <form method="post" action="/accounting/reconcile" enctype="multipart/form-data" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div style="flex:1"><label>Фильтр по комментарию</label><input name="memo" value="{{index .Data "Memo"}}"></div>
+      <button class="btn" type="submit">Фильтровать</button>
+    </form>
+    <form method="post" action="/accounting/reconcile" enctype="multipart/form-data" style="margin-top:12px">
+      <label>Или взять комментарий из операции #</label>
+      <input name="from_op" placeholder="id">
+      <button class="btn secondary" type="submit">Сверить по операции</button>
+    </form>
+    {{if index .Data "Report"}}<pre class="receipt-preview">{{index .Data "Report"}}</pre>{{end}}
+  </section>
+  <section class="panel">
+    <table class="table">
+      <thead><tr><th>ID</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Комментарий</th></tr></thead>
+      <tbody>
+      {{range .Data.Items}}
+        <tr><td>{{.ID}}</td><td>{{.Kind}}</td><td>{{.Amount}}</td><td>{{.Status}}</td><td>{{.Memo}}</td></tr>
+      {{else}}
+        <tr><td colspan="5" class="muted">Нет строк</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

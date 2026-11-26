@@ -1,0 +1,25 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  <section class="panel">
+    <h1>Тестовый SMS-шлюз</h1>
+    <p class="muted">Сообщения корпоративного контура доставки SMS (лабораторный стенд).</p>
+    <table class="table">
+      <thead><tr><th>#</th><th>Заявка</th><th>Телефон</th><th>Текст</th><th>Время</th></tr></thead>
+      <tbody>
+      {{range .Data.Messages}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td class="mono">{{.RID}}</td>
+          <td class="mono">{{.Phone}}</td>
+          <td>{{.Body}}</td>
+          <td class="muted">{{.Created}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="muted">Пока пусто</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+</main>
+{{template "foot" .}}

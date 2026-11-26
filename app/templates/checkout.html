@@ -1,0 +1,20 @@
+{{template "head" .}}
+{{template "top" .}}
+<main>
+  {{template "flash" .}}
+  <section class="panel">
+    <h1>Оформление</h1>
+    <p>Сумма по каталогу: <strong>{{index .Data "Sum"}}</strong></p>
+    <p class="muted">Сначала фиксируется котировка, затем подтверждение оплаты.</p>
+    <form method="post" action="/checkout/quote">
+      <label>Промокод</label>
+      <input name="promo_code" placeholder="OFFICE10">
+      <label>Чаевые курьеру, коп.</label>
+      <input name="tip_kop" value="0">
+      <label>Комментарий к позиции (для чека)</label>
+      <input name="item_comment" placeholder="Позиция для чека">
+      <button class="btn" type="submit">Получить котировку</button>
+    </form>
+  </section>
+</main>
+{{template "foot" .}}
