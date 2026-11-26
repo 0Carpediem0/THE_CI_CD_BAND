@@ -16,6 +16,9 @@
 
 ## Локально (Docker Compose)
 
+Перед запуском добавьте в локальный `.env` переменные `SESSION_KEY` и
+`PAYMENT_KEY`. Для каждой возьмите отдельное значение из `openssl rand -hex 32`.
+
 ```bash
 docker compose up -d --build
 ```
@@ -131,4 +134,4 @@ kubectl delete namespace office-wallet
 | `MAIL_UI` | Ссылка на UI почты | `http://localhost:18025` |
 | `INTERNAL_NOTIFY_HOST` | Хост notify-mock | `notify-mock` |
 | `PUBLIC_BASE` | Внешний URL приложения | `http://localhost:18081` |
-| `SESSION_KEY` / `PAYMENT_KEY` | Ключи подписи | см. compose |
+| `SESSION_KEY` / `PAYMENT_KEY` | Ключи подписи | Обязательные, без значений по умолчанию |
