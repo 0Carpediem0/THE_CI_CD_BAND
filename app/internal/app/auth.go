@@ -37,9 +37,6 @@ func (s *Server) currentUser(r *http.Request) *User {
         if err != nil || u == nil {
                 return nil
         }
-        if role != "" {
-                u.Role = role
-        }
         return u
 }
 
@@ -56,7 +53,7 @@ func (s *Server) setSession(w http.ResponseWriter, u *User) {
                 Name:     sessionCookie,
                 Value:    val,
                 Path:     "/",
-                HttpOnly: false,
+                HttpOnly: true,
                 SameSite: http.SameSiteLaxMode,
         })
 }

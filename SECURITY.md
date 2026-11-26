@@ -8,11 +8,17 @@ http://localhost:18081, тестовая учётка `ivanov / workplace1`.
 
 ```bash
 docker compose up -d --build
+sh poc/run_all.sh               # доступы + деньги + данные, с пояснениями
+sh poc/run_all.sh --dos         # + медленные заголовки и отказ БД
 python3 poc/01_forged_session_and_payment.py http://localhost:18081 replay 2 300 3
 sh poc/02_default_db_creds.sh
 python3 poc/03_slowloris.py http://localhost:18081 60 8000
 python3 poc/04_unlimited_db_pool.py http://localhost:18081 150 45
 ```
+
+Пошаговая расшифровка каждого пункта (что нажимать и в каком порядке) — в `poc/STEPS.md`.
+Отдельные этапы: `poc/stage_access.sh` (доступы), `poc/stage_money.sh` (деньги),
+`poc/stage_data.sh` (данные).
 
 Сброс изменённых данных: `docker compose down -v && docker compose up -d --build`
 

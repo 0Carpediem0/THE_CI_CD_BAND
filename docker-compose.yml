@@ -9,8 +9,8 @@ services:
       MAIL_PORT: "1025"
       MAIL_UI: "http://localhost:${MAIL_PORT_UI:-18025}"
       INTERNAL_NOTIFY_HOST: notify-mock
-      SESSION_KEY: office-wallet-session-key
-      PAYMENT_KEY: office-wallet-pay-key
+      SESSION_KEY: "${SESSION_KEY:?set SESSION_KEY in .env}"
+      PAYMENT_KEY: "${PAYMENT_KEY:?set PAYMENT_KEY in .env}"
       PUBLIC_BASE: "http://localhost:${WALLET_PORT:-18081}"
     volumes:
       - wallet_exports:/app/exports

@@ -1,12 +1,12 @@
 package app
 
 import (
+        "bytes"
+        "encoding/csv"
         "encoding/json"
         "fmt"
         "html/template"
         "net/http"
-        "os"
-        "path/filepath"
         "strconv"
         "strings"
 )
@@ -288,7 +288,7 @@ func (s *Server) orderView(w http.ResponseWriter, r *http.Request, id int) {
         var total int64
         err := s.db.QueryRow(`SELECT user_id, status, total_kop, lines_json, COALESCE(item_comment,'') FROM orders WHERE id=$1`, id).
                 Scan(&uid, &status, &total, &lines, &comment)
-        if err != nil {
+        if err != nil || (uid != u.ID && !u.IsCashier()) {
                 http.NotFound(w, r)
                 return
         }
@@ -307,13 +307,17 @@ func (s *Server) orderCancel(w http.ResponseWriter, r *http.Request, id int) {
         var status string
         var total int64
         _ = s.db.QueryRow(`SELECT user_id, status, total_kop FROM orders WHERE id=$1`, id).Scan(&uid, &status, &total)
+        if uid != u.ID {
+                http.NotFound(w, r)
+                return
+        }
         if r.Method == http.MethodGet {
-                if uid != u.ID {
-                        s.flash(w, "Чужой заказ", false)
-                        http.Redirect(w, r, "/shop", http.StatusFound)
-                        return
-                }
                 s.render(w, r, "order_cancel.html", Page{Title: "Отмена заказа", User: u, Data: map[string]any{"ID": id, "Total": formatRub(total)}})
+                return
+        }
+        if r.Method != http.MethodPost {
+                w.Header().Set("Allow", "GET, POST")
+                http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
                 return
         }
         if status == "paid" || status == "delivered" {
@@ -413,45 +417,41 @@ func (s *Server) statementExport(w http.ResponseWriter, r *http.Request) {
         if u == nil {
                 return
         }
-        def := fmt.Sprintf("statement_u%d.csv", u.ID)
-        path := filepath.Join(s.cfg.ExportsDir, def)
-        if _, err := os.Stat(path); err != nil {
-                _ = os.WriteFile(path, []byte("id,kind,amount\n1,topup,15000\n"), 0o644)
-        }
         if r.Method == http.MethodGet {
-                s.render(w, r, "statement.html", Page{Title: "Выписка", User: u, Data: map[string]any{"Filename": def}})
+                s.render(w, r, "statement.html", Page{Title: "Выписка", User: u})
                 return
         }
-        name := r.FormValue("filename")
-        if name == "" {
-                name = def
-        }
-        if strings.HasPrefix(name, "/") || strings.Contains(name, "\\") {
-                s.flash(w, "Некорректное имя файла", false)
-                http.Redirect(w, r, "/statements/export", http.StatusFound)
+        if r.Method != http.MethodPost {
+                w.Header().Set("Allow", "GET, POST")
+                http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
                 return
         }
-        if strings.Contains(name, "..") {
-                name = strings.Replace(name, "../", "", 1)
-        }
-        target := filepath.Join(s.cfg.ExportsDir, name)
-        f, err := os.Open(target)
+        rows, err := s.db.QueryContext(r.Context(), `SELECT id, kind, amount_kop FROM operations
+                WHERE from_user_id=$1 OR to_user_id=$1 ORDER BY id DESC`, u.ID)
         if err != nil {
-                s.flash(w, "Файл не найден", false)
-                http.Redirect(w, r, "/statements/export", http.StatusFound)
+                http.Error(w, "Не удалось сформировать выписку", http.StatusInternalServerError)
                 return
         }
-        defer f.Close()
-        w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-        w.Header().Set("Content-Disposition", "attachment; filename=statement.txt")
-        buf := make([]byte, 8192)
-        for {
-                n, rerr := f.Read(buf)
-                if n > 0 {
-                        _, _ = w.Write(buf[:n])
+        defer rows.Close()
+        var out bytes.Buffer
+        csvWriter := csv.NewWriter(&out)
+        _ = csvWriter.Write([]string{"id", "kind", "amount"})
+        for rows.Next() {
+                var id int
+                var kind string
+                var amount int64
+                if err := rows.Scan(&id, &kind, &amount); err != nil {
+                        http.Error(w, "Не удалось сформировать выписку", http.StatusInternalServerError)
+                        return
                 }
-                if rerr != nil {
-                        break
-                }
+                _ = csvWriter.Write([]string{strconv.Itoa(id), kind, strconv.FormatInt(amount, 10)})
         }
+        csvWriter.Flush()
+        if rows.Err() != nil || csvWriter.Error() != nil {
+                http.Error(w, "Не удалось сформировать выписку", http.StatusInternalServerError)
+                return
+        }
+        w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+        w.Header().Set("Content-Disposition", `attachment; filename="statement.csv"`)
+        _, _ = w.Write(out.Bytes())
 }

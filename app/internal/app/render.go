@@ -50,36 +50,21 @@ func (s *Server) mailSend(to, subject, body string) {
 }
 
 func parseRubToKop(s string) (int64, error) {
-        s = strings.TrimSpace(s)
-        s = strings.ReplaceAll(s, ",", ".")
-        if s == "" {
+        s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
+        sign := ""
+        if strings.HasPrefix(s, "-") || strings.HasPrefix(s, "+") {
+                sign, s = s[:1], s[1:]
+        }
+        rubles, fraction, hasFraction := strings.Cut(s, ".")
+        if rubles == "" || (hasFraction && (len(fraction) == 0 || len(fraction) > 2)) {
                 return 0, strconv.ErrSyntax
         }
-        if i := strings.IndexByte(s, '.'); i >= 0 {
-                rub := s[:i]
-                frac := s[i+1:]
-                if len(frac) == 1 {
-                        frac += "0"
+        digits := rubles + fraction
+        for _, digit := range digits {
+                if digit < '0' || digit > '9' {
+                        return 0, strconv.ErrSyntax
                 }
-                if len(frac) > 2 {
-                        frac = frac[:2]
-                }
-                ri, err := strconv.ParseInt(rub, 10, 64)
-                if err != nil {
-                        return 0, err
-                }
-                fi, err := strconv.ParseInt(frac, 10, 64)
-                if err != nil {
-                        return 0, err
-                }
-                if ri < 0 {
-                        return ri*100 - fi, nil
-                }
-                return ri*100 + fi, nil
         }
-        ri, err := strconv.ParseInt(s, 10, 64)
-        if err != nil {
-                return 0, err
-        }
-        return ri * 100, nil
+        cents := digits + strings.Repeat("0", 2-len(fraction))
+        return strconv.ParseInt(sign+cents, 10, 64)
 }

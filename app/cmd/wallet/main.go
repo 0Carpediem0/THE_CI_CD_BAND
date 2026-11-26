@@ -18,8 +18,8 @@ func main() {
 		MailUI:       env("MAIL_UI", "http://localhost:18025"),
 		MockHost:     env("INTERNAL_NOTIFY_HOST", "notify-mock"),
 
-                SessionKey:   env("SESSION_KEY", "office-wallet-session-key"),
-                PaymentKey:   env("PAYMENT_KEY", "office-wallet-pay-key"),
+                SessionKey:   os.Getenv("SESSION_KEY"),
+                PaymentKey:   os.Getenv("PAYMENT_KEY"),
                 PublicBase:   env("PUBLIC_BASE", "http://localhost:18081"),
                 ExportsDir:   env("EXPORTS_DIR", "/app/exports"),
                 TemplatesDir: env("TEMPLATES_DIR", "templates"),

@@ -6,8 +6,6 @@
     <h1>Выписка</h1>
     <p class="muted">Скачать CSV-файл выписки по счёту.</p>
     <form method="post" action="/statements/export">
-      <label>Имя файла</label>
-      <input name="filename" value="{{index .Data "Filename"}}">
       <button class="btn" type="submit">Скачать</button>
     </form>
   </section>

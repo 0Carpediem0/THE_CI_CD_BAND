@@ -2,6 +2,7 @@ package app
 
 import (
         "database/sql"
+        "errors"
         "html/template"
         "log"
         "net/http"
@@ -22,10 +23,20 @@ type Server struct {
 }
 
 func New(cfg Config) (*Server, error) {
+        sessionKey := strings.TrimSpace(cfg.SessionKey)
+        paymentKey := strings.TrimSpace(cfg.PaymentKey)
+        if sessionKey == "" || sessionKey == "office-wallet-session-key" || sessionKey == "office-wallet-pay-key" {
+                return nil, errors.New("SESSION_KEY must be set to a non-default secret")
+        }
+        if paymentKey == "" || paymentKey == "office-wallet-pay-key" || paymentKey == "office-wallet-session-key" || paymentKey == sessionKey {
+                return nil, errors.New("PAYMENT_KEY must be set to a distinct non-default secret")
+        }
         db, err := sql.Open("postgres", cfg.DatabaseURL)
         if err != nil {
                 return nil, err
         }
+        db.SetMaxOpenConns(20)
+        db.SetMaxIdleConns(10)
         var pingErr error
         for i := 0; i < 40; i++ {
                 pingErr = db.Ping()
@@ -36,11 +47,13 @@ func New(cfg Config) (*Server, error) {
                 time.Sleep(500 * time.Millisecond)
         }
         if pingErr != nil {
+                _ = db.Close()
                 return nil, pingErr
         }
         _ = os.MkdirAll(cfg.ExportsDir, 0o755)
         s := &Server{cfg: cfg, db: db}
         if err := s.loadTemplates(); err != nil {
+                _ = db.Close()
                 return nil, err
         }
         return s, nil
@@ -62,7 +75,15 @@ func (s *Server) ListenAndServe() error {
         mux := http.NewServeMux()
         mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.cfg.StaticDir))))
         mux.HandleFunc("/", s.route)
-        return http.ListenAndServe(s.cfg.Addr, mux)
+        server := &http.Server{
+                Addr:              s.cfg.Addr,
+                Handler:           mux,
+                ReadHeaderTimeout: 5 * time.Second,
+                ReadTimeout:       15 * time.Second,
+                WriteTimeout:      30 * time.Second,
+                IdleTimeout:       60 * time.Second,
+        }
+        return server.ListenAndServe()
 }
 
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
