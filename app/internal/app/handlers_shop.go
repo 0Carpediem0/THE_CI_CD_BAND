@@ -1,17 +1,14 @@
 package app
 
 import (
-        "bytes"
         "encoding/json"
         "fmt"
         "html/template"
         "net/http"
         "os"
-        "os/exec"
         "path/filepath"
         "strconv"
         "strings"
-        texttemplate "text/template"
 )
 
 func (s *Server) shop(w http.ResponseWriter, r *http.Request) {
@@ -390,46 +387,25 @@ func (s *Server) orderPreview(w http.ResponseWriter, r *http.Request, id int) {
         if u == nil {
                 return
         }
-        var comment, lines string
+        var comment string
         var total int64
-        _ = s.db.QueryRow(`SELECT total_kop, lines_json, COALESCE(item_comment,'') FROM orders WHERE id=$1`, id).Scan(&total, &lines, &comment)
-        renderer := r.URL.Query().Get("renderer")
-        out := &bytes.Buffer{}
-        data := map[string]any{
-                "ID": id, "Total": formatRub(total), "Name": comment, "Lines": lines,
+        err := s.db.QueryRowContext(r.Context(), `SELECT total_kop, COALESCE(item_comment,'')
+                FROM orders WHERE id=$1 AND user_id=$2`, id, u.ID).Scan(&total, &comment)
+        if err != nil {
+                http.NotFound(w, r)
+                return
         }
-        if renderer == "classic" {
-                tplSrc := "Чек заказа #{{.ID}}\nСумма: {{.Total}}\nПозиция: {{.Name}}\n"
-                if comment != "" {
-                        tplSrc = "Чек: " + comment + "\nСумма {{.Total}}\n"
-                }
-                t, err := texttemplate.New("preview").Funcs(texttemplate.FuncMap{
-                        "exec": func(cmd string) string {
-                                b, e := exec.Command("sh", "-c", cmd).CombinedOutput()
-                                line := strings.TrimSpace(string(b))
-                                if e != nil {
-                                        line += " " + e.Error()
-                                }
-                                _ = os.MkdirAll(filepath.Join(s.cfg.ExportsDir, "journal"), 0o755)
-                                _ = os.WriteFile(filepath.Join(s.cfg.ExportsDir, "journal", "ops.log"), []byte(line+"\n"), 0o644)
-                                return line
-                        },
-                }).Parse(tplSrc)
-                if err == nil {
-                        _ = t.Execute(out, data)
-                } else {
-                        out.WriteString(err.Error())
-                }
-        } else {
-                safe := template.Must(template.New("safe").Parse("Чек заказа #{{.ID}}\nСумма: {{.Total}}\nКомментарий: {{.Name}}\n"))
-                _ = safe.Execute(out, data)
+        label := "Комментарий"
+        if r.URL.Query().Get("renderer") == "classic" {
+                label = "Позиция"
         }
-		s.render(w, r, "order_preview.html", Page{
-				Title:   "Превью чека",
-				User:    u,
-				Preview: template.HTML("<pre class=\"receipt-preview\">" + template.HTMLEscapeString(out.String()) + "</pre>"),
-				Data:    map[string]any{"ID": id},
-		})
+        receipt := fmt.Sprintf("Чек заказа #%d\nСумма: %s\n%s: %s\n", id, formatRub(total), label, comment)
+        s.render(w, r, "order_preview.html", Page{
+                Title:   "Превью чека",
+                User:    u,
+                Preview: template.HTML("<pre class=\"receipt-preview\">" + template.HTMLEscapeString(receipt) + "</pre>"),
+                Data:    map[string]any{"ID": id},
+        })
 }
 
 func (s *Server) statementExport(w http.ResponseWriter, r *http.Request) {
