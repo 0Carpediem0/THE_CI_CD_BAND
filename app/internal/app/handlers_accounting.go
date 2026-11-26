@@ -102,15 +102,12 @@ func (s *Server) accountingReconcile(w http.ResponseWriter, r *http.Request) {
                 _ = r.ParseForm()
         }
         memoFilter := r.FormValue("memo")
-        q := `SELECT id, kind, amount_kop, COALESCE(memo,''), status FROM operations WHERE 1=1`
-        if memoFilter != "" {
-                q = fmt.Sprintf(`SELECT id, kind, amount_kop, COALESCE(memo,''), status FROM operations WHERE memo LIKE '%%%s%%'`, memoFilter)
-        }
-        rows, err := s.db.Query(q)
+        rows, err := s.db.QueryContext(r.Context(), `SELECT id, kind, amount_kop, COALESCE(memo,''), status
+                FROM operations WHERE $1 = '' OR memo LIKE $2`, memoFilter, "%"+memoFilter+"%")
         report := ""
         var items []map[string]any
         if err != nil {
-                report = err.Error() + " | " + q
+                report = "Не удалось загрузить операции"
         } else {
                 defer rows.Close()
                 for rows.Next() {
@@ -122,14 +119,15 @@ func (s *Server) accountingReconcile(w http.ResponseWriter, r *http.Request) {
                 }
         }
         if r.Method == http.MethodPost && r.FormValue("from_op") != "" {
-                opID, _ := strconv.Atoi(r.FormValue("from_op"))
-                var memo string
-                _ = s.db.QueryRow(`SELECT COALESCE(memo,'') FROM operations WHERE id=$1`, opID).Scan(&memo)
-                q2 := fmt.Sprintf(`SELECT COUNT(*) FROM operations WHERE memo LIKE '%%%s%%'`, memo)
+                opID, err := strconv.Atoi(r.FormValue("from_op"))
                 var cnt int
-                err2 := s.db.QueryRow(q2).Scan(&cnt)
-                if err2 != nil {
-                        report = err2.Error() + " | " + q2
+                if err == nil {
+                        err = s.db.QueryRowContext(r.Context(), `SELECT COUNT(*)
+                                FROM operations
+                                WHERE memo LIKE (SELECT '%' || COALESCE(memo,'') || '%' FROM operations WHERE id=$1)`, opID).Scan(&cnt)
+                }
+                if err != nil {
+                        report = "Не удалось подсчитать совпадения"
                 } else {
                         report = fmt.Sprintf("совпадений: %d", cnt)
                 }

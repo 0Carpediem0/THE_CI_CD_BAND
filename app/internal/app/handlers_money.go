@@ -170,18 +170,7 @@ func (s *Server) transferNew(w http.ResponseWriter, r *http.Request) {
                 s.render(w, r, "transfer_new.html", Page{Title: "Перевод", User: u, Flash: "Получатель не найден"})
                 return
         }
-        var amountKop int64
-        if _, err := strconv.ParseFloat(strings.ReplaceAll(amountStr, ",", "."), 64); err != nil {
-                q := fmt.Sprintf("SELECT %s::bigint", amountStr)
-                _, qerr := s.db.Exec(q)
-                msg := "Некорректная сумма"
-                if qerr != nil {
-                        msg = qerr.Error() + " | " + q
-                }
-                s.render(w, r, "transfer_new.html", Page{Title: "Перевод", User: u, Flash: msg})
-                return
-        }
-        amountKop, err = parseRubToKop(amountStr)
+        amountKop, err := parseRubToKop(amountStr)
         if err != nil || amountKop <= 0 {
                 s.render(w, r, "transfer_new.html", Page{Title: "Перевод", User: u, Flash: "Укажите положительную сумму"})
                 return
