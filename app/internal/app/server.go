@@ -2,6 +2,7 @@ package app
 
 import (
         "database/sql"
+        "errors"
         "html/template"
         "log"
         "net/http"
@@ -22,6 +23,14 @@ type Server struct {
 }
 
 func New(cfg Config) (*Server, error) {
+        sessionKey := strings.TrimSpace(cfg.SessionKey)
+        paymentKey := strings.TrimSpace(cfg.PaymentKey)
+        if sessionKey == "" || sessionKey == "office-wallet-session-key" || sessionKey == "office-wallet-pay-key" {
+                return nil, errors.New("SESSION_KEY must be set to a non-default secret")
+        }
+        if paymentKey == "" || paymentKey == "office-wallet-pay-key" || paymentKey == "office-wallet-session-key" || paymentKey == sessionKey {
+                return nil, errors.New("PAYMENT_KEY must be set to a distinct non-default secret")
+        }
         db, err := sql.Open("postgres", cfg.DatabaseURL)
         if err != nil {
                 return nil, err
